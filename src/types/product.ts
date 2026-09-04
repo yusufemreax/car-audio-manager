@@ -12,7 +12,8 @@ export type ProductCategory =
   | "dsp-processor"
   | "installation-equipment"
   | "multimedia"
-  | "multimedia-frame";
+  | "multimedia-frame"
+  | "vehicle-camera";
 
 export type SpeakerType =
   | "midrange"

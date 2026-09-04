@@ -37,7 +37,18 @@ export interface ProductFieldDefinition {
    */
   visibleWhen?: {
     key: string;
-    value: string;
+    /*
+     * Tek bir değerde görünürlük için.
+     * Mevcut kurallarla geriye dönük uyumludur.
+     */
+    value?: string;
+
+    /*
+     * Birden fazla değerde görünürlük için.
+     * Örn. arka kamera kalitesi hem
+     * front-rear hem front-rear-interior seçiminde görünür.
+     */
+    values?: string[];
   };
 }
 
@@ -515,6 +526,129 @@ export const productCategoryDefinitions:
         source: "specifications",
         inputType: "text",
         required: true,
+      },
+    ],
+  },
+
+  "vehicle-camera": {
+    value: "vehicle-camera",
+    label: "Araç Kamerası",
+    href: "/products/vehicle-camera",
+    fields: [
+      {
+        key: "cameraSetup",
+        label: "Kamera Tipi",
+        source: "specifications",
+        inputType: "select",
+        required: true,
+        options: [
+          {
+            value: "front",
+            label: "Ön",
+          },
+          {
+            value: "front-rear",
+            label: "Ön - Arka",
+          },
+          {
+            value: "front-rear-interior",
+            label: "Ön - Arka - İç",
+          },
+        ],
+      },
+      {
+        key: "frontCameraQuality",
+        label: "Ön Kamera Kalitesi",
+        source: "specifications",
+        inputType: "select",
+        required: true,
+        visibleWhen: {
+          key: "cameraSetup",
+          values: [
+            "front",
+            "front-rear",
+            "front-rear-interior",
+          ],
+        },
+        options: [
+          { value: "480p", label: "480p" },
+          { value: "720p", label: "720p" },
+          { value: "1080p", label: "1080p HD" },
+          { value: "2k", label: "2K" },
+          { value: "4k", label: "4K" },
+        ],
+      },
+      {
+        key: "rearCameraQuality",
+        label: "Arka Kamera Kalitesi",
+        source: "specifications",
+        inputType: "select",
+        required: true,
+        visibleWhen: {
+          key: "cameraSetup",
+          values: [
+            "front-rear",
+            "front-rear-interior",
+          ],
+        },
+        options: [
+          { value: "480p", label: "480p" },
+          { value: "720p", label: "720p" },
+          { value: "1080p", label: "1080p HD" },
+          { value: "2k", label: "2K" },
+          { value: "4k", label: "4K" },
+        ],
+      },
+      {
+        key: "interiorCameraQuality",
+        label: "İç Kamera Kalitesi",
+        source: "specifications",
+        inputType: "select",
+        required: true,
+        visibleWhen: {
+          key: "cameraSetup",
+          value: "front-rear-interior",
+        },
+        options: [
+          { value: "480p", label: "480p" },
+          { value: "720p", label: "720p" },
+          { value: "1080p", label: "1080p HD" },
+          { value: "2k", label: "2K" },
+          { value: "4k", label: "4K" },
+        ],
+      },
+      {
+        key: "hasAdas",
+        label: "ADAS Desteği",
+        source: "specifications",
+        inputType: "boolean",
+      },
+      {
+        key: "hasParkingMode",
+        label: "Park Modu",
+        source: "specifications",
+        inputType: "boolean",
+      },
+      {
+        key: "hasShockSensor",
+        label: "Sallantı Sensörü",
+        source: "specifications",
+        inputType: "boolean",
+      },
+      {
+        key: "sdCardSupport",
+        label: "SD Kart Desteği",
+        source: "specifications",
+        inputType: "select",
+        required: true,
+        options: [
+          { value: "16", label: "16 GB" },
+          { value: "32", label: "32 GB" },
+          { value: "64", label: "64 GB" },
+          { value: "128", label: "128 GB" },
+          { value: "256", label: "256 GB" },
+          { value: "512", label: "512 GB" },
+        ],
       },
     ],
   },

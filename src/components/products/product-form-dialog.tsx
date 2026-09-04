@@ -1317,16 +1317,26 @@ export function ProductFormDialog({
       }
 
       const dependencyValue =
-        form.specifications[
-          field.visibleWhen.key
-        ];
+        String(
+          form.specifications[
+            field.visibleWhen.key
+          ] ??
+          ""
+        );
+
+      if (
+        field.visibleWhen.values
+          ?.length
+      ) {
+        return field.visibleWhen.values.includes(
+          dependencyValue
+        );
+      }
 
       return (
-        String(
-          dependencyValue ??
-          ""
-        ) ===
-        field.visibleWhen.value
+        dependencyValue ===
+        (field.visibleWhen.value ??
+          "")
       );
     };
 
