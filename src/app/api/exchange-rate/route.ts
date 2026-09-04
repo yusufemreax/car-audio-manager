@@ -1,60 +1,44 @@
 import {
-  NextResponse,
-} from "next/server";
+  ExchangeRateServiceError,
+  getUsdTryExchangeRate,
+} from "@/lib/exchange-rate-service";
 
-interface FrankfurterResponse {
-  amount: number;
-  base: string;
-  date: string;
-
-  rates: {
-    TRY?: number;
-  };
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const response =
-      await fetch(
-        "https://api.frankfurter.dev/v1/latest?base=USD&symbols=TRY",
-        {
-          next: {
-            revalidate: 900,
-          },
-        }
-      );
+    const result =
+      await getUsdTryExchangeRate();
 
-    if (!response.ok) {
-      throw new Error(
-        "Kur servisine ulaşılamadı."
-      );
-    }
-
-    const data: FrankfurterResponse =
-      await response.json();
-
-    const rate =
-      data.rates.TRY;
-
-    if (
-      typeof rate !== "number" ||
-      !Number.isFinite(rate)
-    ) {
-      throw new Error(
-        "USD/TRY kuru alınamadı."
-      );
-    }
-
-    return NextResponse.json({
+    /*
+     * ÖNEMLİ:
+     * product-form-dialog.tsx mevcut olarak
+     * result.success ve result.data bekliyor.
+     * Bu response contract'ı değiştirilmemelidir.
+     */
+    return Response.json({
       success: true,
-
+      message:
+        result.fromCache
+          ? "Günün EGB dolar kuru veritabanından alındı."
+          : "Günün EGB dolar kuru EGB'den alındı ve veritabanına kaydedildi.",
       data: {
-        from: "USD",
-        to: "TRY",
-
-        rate,
-
-        date: data.date,
+        rate: result.rate,
+        date: result.rateDate,
+        base: result.baseCurrency,
+        quote: result.quoteCurrency,
+        source: result.source,
+        fromCache:
+          result.fromCache,
+        fetchedAt:
+          result.fetchedAt,
+        ...(result.rawRate
+          ? {
+              rawRate:
+                result.rawRate,
+            }
+          : {}),
       },
     });
   } catch (error) {
@@ -63,12 +47,30 @@ export async function GET() {
       error
     );
 
-    return NextResponse.json(
+    if (
+      error instanceof
+      ExchangeRateServiceError
+    ) {
+      return Response.json(
+        {
+          success: false,
+          message:
+            error.message,
+          data: null,
+        },
+        {
+          status:
+            error.statusCode,
+        }
+      );
+    }
+
+    return Response.json(
       {
         success: false,
-
         message:
-          "Güncel dolar kuru alınamadı.",
+          "Dolar kuru alınamadı.",
+        data: null,
       },
       {
         status: 500,
