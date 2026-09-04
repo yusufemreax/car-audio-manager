@@ -32,6 +32,13 @@ import {
   getProductByIdWithFreshPrice,
 } from "@/lib/products-service";
 
+import {
+  EgbPriceScraperError,
+  fetchEgbProductPrice,
+  isEgbUrl,
+  roundCurrency,
+} from "@/lib/scraping/egb-price-scraper";
+
 interface RouteContext {
   params:
     Promise<{
@@ -48,21 +55,6 @@ function cleanString(
     : "";
 }
 
-function isValidHttpsUrl(
-  value: string
-) {
-  try {
-    const url =
-      new URL(value);
-
-    return (
-      url.protocol ===
-      "https:"
-    );
-  } catch {
-    return false;
-  }
-}
 
 function getObjectId(
   value: string
@@ -189,10 +181,6 @@ export async function PUT(
       cleanString(
         body.category
       );
-    const priceUsd =
-      Number(
-        body.priceUsd
-      );
     const suppliers =
       normalizeProductSuppliers(
         body.suppliers,
@@ -203,7 +191,7 @@ export async function PUT(
         body,
         "sourceUrl"
       );
-    const sourceUrl =
+    const requestedSourceUrl =
       cleanString(
         body.sourceUrl
       );
@@ -253,24 +241,6 @@ export async function PUT(
     }
 
     if (
-      !Number.isFinite(
-        priceUsd
-      ) ||
-      priceUsd < 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "USD fiyatı 0 veya daha büyük olmalıdır.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
       suppliers.length ===
       0
     ) {
@@ -288,16 +258,16 @@ export async function PUT(
 
     if (
       hasSourceUrlField &&
-      sourceUrl &&
-      !isValidHttpsUrl(
-        sourceUrl
+      requestedSourceUrl &&
+      !isEgbUrl(
+        requestedSourceUrl
       )
     ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Geçerli bir HTTPS ürün linki giriniz.",
+            "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.",
         },
         {
           status: 400,
@@ -371,31 +341,74 @@ export async function PUT(
       );
     }
 
-    const existingSourceUrl =
-      cleanString(
-        existing.sourceUrl
+    const effectiveSourceUrl =
+      hasSourceUrlField
+        ? requestedSourceUrl
+        : cleanString(
+            existing.sourceUrl
+          );
+
+    if (
+      effectiveSourceUrl &&
+      !isEgbUrl(
+        effectiveSourceUrl
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.",
+        },
+        {
+          status: 400,
+        }
       );
-
-    const sourceUrlChanged =
-      hasSourceUrlField &&
-      sourceUrl !==
-        existingSourceUrl;
-
-    const manualPriceChanged =
-      Number(
-        existing.priceUsd
-      ) !== priceUsd;
-
-    const shouldResetPriceRefresh =
-      sourceUrlChanged ||
-      (manualPriceChanged &&
-        Boolean(
-          sourceUrl ||
-            existingSourceUrl
-        ));
+    }
 
     const now =
       new Date();
+
+    let priceUsd: number;
+
+    if (effectiveSourceUrl) {
+      /*
+       * Linkli üründe fiyat manuel değiştirilemez.
+       * PUT sırasında server EGB'den yeniden okur.
+       */
+      const remotePrice =
+        await fetchEgbProductPrice(
+          effectiveSourceUrl
+        );
+
+      priceUsd =
+        roundCurrency(
+          remotePrice.priceUsd
+        );
+    } else {
+      priceUsd =
+        Number(
+          body.priceUsd
+        );
+
+      if (
+        !Number.isFinite(
+          priceUsd
+        ) ||
+        priceUsd < 0
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "USD fiyatı 0 veya daha büyük olmalıdır.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+    }
 
     const subCategory =
       cleanString(
@@ -417,10 +430,14 @@ export async function PUT(
           priceUsd,
           category,
           suppliers,
-          ...(hasSourceUrlField &&
-          sourceUrl
+          ...(effectiveSourceUrl
             ? {
-                sourceUrl,
+                sourceUrl:
+                  effectiveSourceUrl,
+                priceCheckedAt:
+                  now,
+                priceRefreshAttemptedAt:
+                  now,
               }
             : {}),
           specifications:
@@ -450,14 +467,6 @@ export async function PUT(
             : {}),
         },
         $unset: {
-          ...(shouldResetPriceRefresh
-            ? {
-                priceCheckedAt:
-                  "",
-                priceRefreshAttemptedAt:
-                  "",
-              }
-            : {}),
           ...(!subCategory
             ? {
                 subCategory:
@@ -465,9 +474,13 @@ export async function PUT(
               }
             : {}),
           ...(hasSourceUrlField &&
-          !sourceUrl
+          !requestedSourceUrl
             ? {
                 sourceUrl:
+                  "",
+                priceCheckedAt:
+                  "",
+                priceRefreshAttemptedAt:
                   "",
               }
             : {}),
@@ -514,6 +527,23 @@ export async function PUT(
       "PUT /api/products/[id] error:",
       error
     );
+
+    if (
+      error instanceof
+        EgbPriceScraperError
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            error.message,
+        },
+        {
+          status:
+            error.statusCode,
+        }
+      );
+    }
 
     return NextResponse.json(
       {

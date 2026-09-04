@@ -456,18 +456,6 @@ export async function buildSystemPreparationData(
     );
   }
 
-  /*
-   * Ürünler merkezi ürün servisinden alınır.
-   *
-   * Bu servis her ürün için:
-   * - sourceUrl yoksa mevcut MongoDB fiyatını kullanır.
-   * - sourceUrl varsa son fiyat kontrolünü 5 dakikalık TTL ile değerlendirir.
-   * - TTL dolmuşsa EGB fiyatını yeniler.
-   * - EGB hatasında mevcut MongoDB fiyatıyla devam eder.
-   *
-   * Böylece hem POST hem PUT akışında system preparation snapshot'ı
-   * mümkün olan en güncel ürün fiyatı ile oluşturulur.
-   */
   const products =
     productObjectIds.length >
     0

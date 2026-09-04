@@ -18,10 +18,6 @@ import {
   serializeSystemPreparation,
 } from "@/lib/system-preparations-collection";
 
-import {
-  getProductsByIdsWithFreshPrices,
-} from "@/lib/products-service";
-
 interface ExchangeRateApiResponse {
   success: boolean;
   message?: string;
@@ -82,91 +78,6 @@ function getLaborTotal(
 
   return safeNumber(
     preparation.laborCostTry
-  );
-}
-
-/*
- * =========================================================
- * REFRESH PAYLOAD PRODUCT PRICES
- *
- * Sistem kaydedilmeden önce payload içerisindeki tüm
- * seçili ürünleri merkezi fiyat servisine gönderir.
- *
- * Servis:
- *
- * - sourceUrl yoksa MongoDB fiyatını kullanır.
- * - sourceUrl varsa 5 dakikalık TTL kontrol eder.
- * - son kontrol 5 dakikadan eskiyse EGB fiyatını yeniler.
- * - EGB hata verirse eski MongoDB fiyatıyla devam eder.
- *
- * Builder bundan sonra MongoDB'den ürünü okuduğunda
- * mümkün olan en güncel priceUsd değerini görür.
- * =========================================================
- */
-async function refreshPayloadProductPrices(
-  body: SystemPreparationPayload
-) {
-  const productIds =
-    new Set<string>();
-
-  /*
-   * Template üzerinden gelen seçimler.
-   */
-  for (
-    const selection of
-    body.selections ?? []
-  ) {
-    const productId =
-      cleanString(
-        selection.productId
-      );
-
-    if (productId) {
-      productIds.add(
-        productId
-      );
-    }
-  }
-
-  /*
-   * Kullanıcının sonradan eklediği custom ürün alanları.
-   */
-  for (
-    const customItem of
-    body.customItems ?? []
-  ) {
-    const productId =
-      cleanString(
-        customItem.productId
-      );
-
-    if (productId) {
-      productIds.add(
-        productId
-      );
-    }
-  }
-
-  if (
-    productIds.size ===
-    0
-  ) {
-    return;
-  }
-
-  /*
-   * Buradaki dönüş değerini kullanmamıza gerek yok.
-   *
-   * getProductsByIdsWithFreshPrices gerekli ürünlerin
-   * fiyatlarını MongoDB üzerinde güncelliyor.
-   *
-   * Sonrasında buildSystemPreparationData()
-   * kendi normal akışında MongoDB'den tekrar okuyacak.
-   */
-  await getProductsByIdsWithFreshPrices(
-    Array.from(
-      productIds
-    )
   );
 }
 
@@ -270,18 +181,9 @@ async function refreshReadySystemsWithCurrentRate(
           productTotalUsd *
           exchangeRate;
 
-        /*
+        /**
          * Hazır sistem güncel kurla refresh edilirken de
          * yalnızca komisyona dahil ürünler baz alınır.
-         *
-         * DİKKAT:
-         * Burada ürün USD fiyatlarına dokunmuyoruz.
-         *
-         * Hazır sistem oluşturulurken alınan unitPriceUsd
-         * snapshot olarak korunur.
-         *
-         * Sadece güncel USD/TRY kuru üzerinden TL karşılıkları
-         * tekrar hesaplanır.
          */
         const commissionBaseUsd =
           preparation.items.reduce(
@@ -337,31 +239,21 @@ async function refreshReadySystemsWithCurrentRate(
               _id:
                 preparation._id,
             },
-
             update: {
               $set: {
                 exchangeRate,
-
                 ...(exchangeRateDate
                   ? {
                       exchangeRateDate,
                     }
                   : {}),
-
                 productTotalTry,
-
                 commissionAmountUsd,
-
                 commissionAmountTry,
-
                 laborCostTry,
-
                 discountTry,
-
                 profitTry,
-
                 customerTotalTry,
-
                 updatedAt:
                   now,
               },
@@ -376,16 +268,6 @@ async function refreshReadySystemsWithCurrentRate(
   );
 }
 
-/*
- * =========================================================
- * GET
- *
- * /api/system-preparations
- *
- * /api/system-preparations?status=draft
- * /api/system-preparations?status=ready
- * =========================================================
- */
 export async function GET(
   request:
     NextRequest
@@ -411,7 +293,6 @@ export async function GET(
           {
             success:
               false,
-
             message:
               "Geçersiz sistem durumu.",
           },
@@ -426,13 +307,6 @@ export async function GET(
         statusParam;
     }
 
-    /*
-     * Hazır sistem listesi okunurken
-     * yalnızca güncel USD/TRY kuru hesaplanır.
-     *
-     * Ürün USD snapshot fiyatları kesinlikle
-     * burada değiştirilmez.
-     */
     if (
       status ===
       "ready"
@@ -466,7 +340,6 @@ export async function GET(
     return NextResponse.json({
       success:
         true,
-
       data:
         preparations.map(
           (
@@ -489,7 +362,6 @@ export async function GET(
       {
         success:
           false,
-
         message:
           error instanceof Error
             ? error.message
@@ -503,13 +375,6 @@ export async function GET(
   }
 }
 
-/*
- * =========================================================
- * POST
- *
- * CREATE SYSTEM PREPARATION
- * =========================================================
- */
 export async function POST(
   request:
     NextRequest
@@ -519,50 +384,14 @@ export async function POST(
       (await request.json()) as
         SystemPreparationPayload;
 
-    /*
-     * =====================================================
-     * PRODUCT PRICE REFRESH
-     *
-     * Builder çalışmadan ÖNCE ürün fiyatlarını
-     * merkezi 5 dakikalık TTL mekanizmasından geçiriyoruz.
-     *
-     * Örnek:
-     *
-     * 10:00 → fiyat kontrol edildi
-     * 10:02 → EGB'ye gidilmez
-     * 10:04 → EGB'ye gidilmez
-     * 10:05+ → EGB tekrar kontrol edilir
-     *
-     * sourceUrl olmayan ürünlerde hiçbir dış istek yapılmaz.
-     * =====================================================
-     */
-    await refreshPayloadProductPrices(
-      body
-    );
-
-    /*
-     * Fiyat refresh tamamlandıktan sonra builder
-     * ürünleri MongoDB'den okuyarak snapshot oluşturur.
-     *
-     * Böylece:
-     *
-     * product.priceUsd
-     *          ↓
-     * SystemPreparationItem.unitPriceUsd
-     *
-     * güncel fiyat üzerinden oluşur.
-     */
     const preparationData =
       await buildSystemPreparationData(
         body
       );
 
-    /*
-     * Builder sonucunda her item mutlaka
-     * gerçek boolean taşımalı.
-     *
-     * Böylece false değeri Mongo yazımından
-     * önce kaybolamaz.
+    /**
+     * Builder sonucunda her item mutlaka gerçek boolean taşımalı.
+     * Böylece false değeri Mongo yazımından önce kaybolamaz.
      */
     const invalidCommissionItem =
       preparationData.items.find(
@@ -571,9 +400,7 @@ export async function POST(
           "boolean"
       );
 
-    if (
-      invalidCommissionItem
-    ) {
+    if (invalidCommissionItem) {
       throw new Error(
         `Komisyon seçimi oluşturulamadı: ${invalidCommissionItem.id}`
       );
@@ -589,13 +416,10 @@ export async function POST(
       await collection.insertOne(
         {
           ...preparationData,
-
           status:
             "draft",
-
           createdAt:
             now,
-
           updatedAt:
             now,
         }
@@ -609,18 +433,12 @@ export async function POST(
         }
       );
 
-    if (
-      !createdPreparation
-    ) {
+    if (!createdPreparation) {
       throw new Error(
         "Oluşturulan sistem tekrar okunamadı."
       );
     }
 
-    /*
-     * MongoDB'ye yazıldıktan sonra da
-     * komisyon flag değerlerini doğruluyoruz.
-     */
     const missingStoredCommissionFlag =
       createdPreparation.items.find(
         (item) =>
@@ -628,9 +446,7 @@ export async function POST(
           "boolean"
       );
 
-    if (
-      missingStoredCommissionFlag
-    ) {
+    if (missingStoredCommissionFlag) {
       throw new Error(
         `MongoDB komisyon seçimini kaydetmedi: ${missingStoredCommissionFlag.id}`
       );
@@ -640,7 +456,6 @@ export async function POST(
       {
         success:
           true,
-
         data:
           serializeSystemPreparation(
             createdPreparation
@@ -669,7 +484,6 @@ export async function POST(
       {
         success:
           false,
-
         message:
           error instanceof Error
             ? error.message

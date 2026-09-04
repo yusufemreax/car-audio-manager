@@ -123,6 +123,20 @@ interface ProductImageUploadResponse {
   };
 }
 
+interface SourcePriceResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    source: "EGB";
+    sourceUrl: string;
+    finalUrl: string;
+    responseStatus: number;
+    loggedIn: true;
+    rawPrice: string;
+    priceUsd: number;
+  };
+}
+
 interface ProductFormDialogProps {
   open: boolean;
 
@@ -207,6 +221,27 @@ function formatTry(
       maximumFractionDigits: 2,
     }
   ).format(value);
+}
+
+function isSupportedSourceUrl(
+  value: string
+) {
+  try {
+    const url =
+      new URL(value);
+
+    return (
+      url.protocol === "https:" &&
+      (
+        url.hostname.toLowerCase() ===
+          "www.b2begb.com" ||
+        url.hostname.toLowerCase() ===
+          "b2begb.com"
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 
 /*
@@ -581,6 +616,20 @@ export function ProductFormDialog({
     useState(false);
 
   const [
+    loadingSourcePrice,
+    setLoadingSourcePrice,
+  ] =
+    useState(false);
+
+  const [
+    sourcePriceError,
+    setSourcePriceError,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
     submitting,
     setSubmitting,
   ] =
@@ -606,6 +655,12 @@ export function ProductFormDialog({
     }
 
     setError(null);
+    setSourcePriceError(
+      null
+    );
+    setLoadingSourcePrice(
+      false
+    );
 
     /*
      * EDIT MODE
@@ -817,6 +872,157 @@ export function ProductFormDialog({
     product,
     resolvedCategory,
     categoryFields,
+  ]);
+
+  /*
+   * =======================================================
+   * SOURCE URL -> AUTOMATIC USD PRICE
+   *
+   * Link doluysa fiyat kullanıcı tarafından yazılmaz.
+   * 650 ms debounce sonrasında EGB'den okunur.
+   * Backend de kayıt sırasında fiyatı yeniden doğrular.
+   * =======================================================
+   */
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const sourceUrl =
+      form.sourceUrl.trim();
+
+    if (!sourceUrl) {
+      setLoadingSourcePrice(
+        false
+      );
+      setSourcePriceError(
+        null
+      );
+
+      return;
+    }
+
+    if (
+      !isSupportedSourceUrl(
+        sourceUrl
+      )
+    ) {
+      setLoadingSourcePrice(
+        false
+      );
+      setSourcePriceError(
+        "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor."
+      );
+
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    const timeoutId =
+      window.setTimeout(
+        async () => {
+          setLoadingSourcePrice(
+            true
+          );
+          setSourcePriceError(
+            null
+          );
+
+          try {
+            const response =
+              await fetch(
+                "/api/scraping/egb/price",
+                {
+                  method:
+                    "POST",
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+                  },
+                  body:
+                    JSON.stringify({
+                      url:
+                        sourceUrl,
+                    }),
+                  cache:
+                    "no-store",
+                }
+              );
+
+            const result:
+              SourcePriceResponse =
+                await response.json();
+
+            if (
+              !response.ok ||
+              !result.success ||
+              !result.data
+            ) {
+              throw new Error(
+                result.message ??
+                  "Ürün fiyatı linkten alınamadı."
+              );
+            }
+
+            if (cancelled) {
+              return;
+            }
+
+            setForm(
+              (previous) => {
+                /*
+                 * Kullanıcı debounce sırasında başka link yazdıysa
+                 * eski request'in fiyatını yeni linke uygulama.
+                 */
+                if (
+                  previous.sourceUrl.trim() !==
+                  sourceUrl
+                ) {
+                  return previous;
+                }
+
+                return {
+                  ...previous,
+                  priceUsd:
+                    String(
+                      result.data!.priceUsd
+                    ),
+                };
+              }
+            );
+          } catch (sourceError) {
+            if (cancelled) {
+              return;
+            }
+
+            setSourcePriceError(
+              sourceError instanceof Error
+                ? sourceError.message
+                : "Ürün fiyatı linkten alınamadı."
+            );
+          } finally {
+            if (!cancelled) {
+              setLoadingSourcePrice(
+                false
+              );
+            }
+          }
+        },
+        650
+      );
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(
+        timeoutId
+      );
+    };
+  }, [
+    open,
+    form.sourceUrl,
   ]);
 
   /*
@@ -1349,7 +1555,33 @@ export function ProductFormDialog({
         return "Model zorunludur.";
       }
 
-      if (
+      const sourceUrl =
+        form.sourceUrl.trim();
+
+      if (sourceUrl) {
+        if (
+          !isSupportedSourceUrl(
+            sourceUrl
+          )
+        ) {
+          return "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.";
+        }
+
+        if (loadingSourcePrice) {
+          return "Ürün fiyatı linkten okunuyor. Lütfen işlemin tamamlanmasını bekleyin.";
+        }
+
+        if (sourcePriceError) {
+          return sourcePriceError;
+        }
+
+        if (
+          form.priceUsd ===
+          ""
+        ) {
+          return "Ürün linkinden fiyat alınamadı.";
+        }
+      } else if (
         form.priceUsd ===
         ""
       ) {
@@ -1375,26 +1607,6 @@ export function ProductFormDialog({
         0
       ) {
         return "En az bir tedarikçi seçmelisiniz.";
-      }
-
-      if (
-        form.sourceUrl.trim()
-      ) {
-        try {
-          const sourceUrl =
-            new URL(
-              form.sourceUrl.trim()
-            );
-
-          if (
-            sourceUrl.protocol !==
-            "https:"
-          ) {
-            return "Ürün linki HTTPS olmalıdır.";
-          }
-        } catch {
-          return "Geçerli bir ürün linki giriniz.";
-        }
       }
 
       /*
@@ -2985,10 +3197,28 @@ export function ProductFormDialog({
                   disabled={
                     submitting
                   }
-                  className="pl-7"
+                  readOnly={
+                    Boolean(
+                      form.sourceUrl.trim()
+                    )
+                  }
+                  aria-busy={
+                    loadingSourcePrice
+                  }
+                  className={`pl-7 ${
+                    form.sourceUrl.trim()
+                      ? "cursor-not-allowed bg-muted/50"
+                      : ""
+                  }`}
                   onChange={(
                     event
                   ) => {
+                    if (
+                      form.sourceUrl.trim()
+                    ) {
+                      return;
+                    }
+
                     setForm(
                       (
                         previous
@@ -3002,9 +3232,34 @@ export function ProductFormDialog({
                       })
                     );
                   }}
-                  placeholder="0.00"
+                  placeholder={
+                    form.sourceUrl.trim()
+                      ? "Linkten okunuyor..."
+                      : "0.00"
+                  }
                 />
               </div>
+
+              {form.sourceUrl.trim() ? (
+                loadingSourcePrice ? (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Fiyat ürün linkinden alınıyor...
+                  </p>
+                ) : sourcePriceError ? (
+                  <p className="text-xs text-destructive">
+                    {sourcePriceError}
+                  </p>
+                ) : form.priceUsd ? (
+                  <p className="text-xs text-emerald-600">
+                    Fiyat ürün linkinden otomatik alındı.
+                  </p>
+                ) : null
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Ürün linki girilmezse fiyatı manuel yazabilirsiniz.
+                </p>
+              )}
             </div>
 
             {/* TRY PRICE */}
@@ -3074,12 +3329,33 @@ export function ProductFormDialog({
                 onChange={(
                   event
                 ) => {
+                  const nextSourceUrl =
+                    event.target.value;
+
+                  setSourcePriceError(
+                    null
+                  );
+
                   setForm(
                     (previous) => ({
                       ...previous,
 
                       sourceUrl:
-                        event.target.value,
+                        nextSourceUrl,
+
+                      /*
+                       * Link doluysa eski/manual fiyatı göstermeyelim.
+                       * Link kaldırılırsa add modunda boş, edit modunda
+                       * ürünün mevcut fiyatı ile manuel girişe dön.
+                       */
+                      priceUsd:
+                        nextSourceUrl.trim()
+                          ? ""
+                          : product
+                            ? String(
+                                product.priceUsd
+                              )
+                            : "",
                     })
                   );
                 }}
@@ -3087,7 +3363,7 @@ export function ProductFormDialog({
               />
 
               <p className="text-xs text-muted-foreground">
-                Opsiyoneldir. Link bulunan ürünlerin fiyatı ürün seçim ekranı açılırken tedarikçi sitesinden kontrol edilebilir.
+                Opsiyoneldir. Link girerseniz USD fiyat alanı salt okunur olur ve fiyat EGB'den otomatik alınır. Link girmezseniz fiyatı manuel yazabilirsiniz.
               </p>
             </div>
 
@@ -3267,6 +3543,7 @@ export function ProductFormDialog({
               disabled={
                 submitting ||
                 uploadingImage ||
+                loadingSourcePrice ||
                 loadingProductCode ||
                 !resolvedCategory ||
                 !categoryDefinition ||
@@ -3274,11 +3551,14 @@ export function ProductFormDialog({
               }
             >
               {(submitting ||
-                uploadingImage) && (
+                uploadingImage ||
+                loadingSourcePrice) && (
                 <Loader2 className="size-4 animate-spin" />
               )}
 
-              {uploadingImage
+              {loadingSourcePrice
+                ? "Fiyat alınıyor..."
+                : uploadingImage
                 ? "Resim yükleniyor..."
                 : submitting
                 ? mode ===

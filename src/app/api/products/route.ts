@@ -36,6 +36,13 @@ import {
   getProductsWithFreshPrices,
 } from "@/lib/products-service";
 
+import {
+  EgbPriceScraperError,
+  fetchEgbProductPrice,
+  isEgbUrl,
+  roundCurrency,
+} from "@/lib/scraping/egb-price-scraper";
+
 /*
  * =========================================================
  * HELPERS
@@ -51,21 +58,6 @@ function cleanString(
     : "";
 }
 
-function isValidHttpsUrl(
-  value: string
-) {
-  try {
-    const url =
-      new URL(value);
-
-    return (
-      url.protocol ===
-      "https:"
-    );
-  } catch {
-    return false;
-  }
-}
 
 /*
  * =========================================================
@@ -257,7 +249,7 @@ export async function POST(
 
     if (
       sourceUrl &&
-      !isValidHttpsUrl(
+      !isEgbUrl(
         sourceUrl
       )
     ) {
@@ -265,7 +257,7 @@ export async function POST(
         {
           success: false,
           message:
-            "Geçerli bir HTTPS ürün linki giriniz.",
+            "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.",
         },
         {
           status: 400,
@@ -297,31 +289,57 @@ export async function POST(
       );
     }
 
-    const priceUsd =
-      Number(
-        body.priceUsd
-      );
+    let priceUsd: number;
+    let priceCheckedAt:
+      Date | undefined;
 
-    if (
-      !Number.isFinite(
-        priceUsd
-      ) ||
-      priceUsd <
-        0
-    ) {
-      return NextResponse.json(
-        {
-          success:
-            false,
+    if (sourceUrl) {
+      /*
+       * Linkli üründe client'tan gelen fiyatı kullanmıyoruz.
+       * Kayıt anında EGB'den yeniden okuyup server-side doğruluyoruz.
+       */
+      const remotePrice =
+        await fetchEgbProductPrice(
+          sourceUrl
+        );
 
-          message:
-            "USD fiyatı 0 veya daha büyük olmalıdır.",
-        },
-        {
-          status:
-            400,
-        }
-      );
+      priceUsd =
+        roundCurrency(
+          remotePrice.priceUsd
+        );
+
+      priceCheckedAt =
+        new Date();
+    } else {
+      /*
+       * Link yoksa kullanıcı fiyatı manuel girer.
+       */
+      priceUsd =
+        Number(
+          body.priceUsd
+        );
+
+      if (
+        !Number.isFinite(
+          priceUsd
+        ) ||
+        priceUsd <
+          0
+      ) {
+        return NextResponse.json(
+          {
+            success:
+              false,
+
+            message:
+              "USD fiyatı 0 veya daha büyük olmalıdır.",
+          },
+          {
+            status:
+              400,
+          }
+        );
+      }
     }
 
     /*
@@ -453,6 +471,10 @@ export async function POST(
           ...(sourceUrl
             ? {
                 sourceUrl,
+                priceCheckedAt:
+                  priceCheckedAt!,
+                priceRefreshAttemptedAt:
+                  priceCheckedAt!,
               }
             : {}),
 
@@ -658,6 +680,23 @@ export async function POST(
       "POST /api/products error:",
       error
     );
+
+    if (
+      error instanceof
+        EgbPriceScraperError
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            error.message,
+        },
+        {
+          status:
+            error.statusCode,
+        }
+      );
+    }
 
     if (
       error instanceof
