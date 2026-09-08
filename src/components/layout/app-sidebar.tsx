@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import {
   Box,
@@ -17,6 +17,8 @@ import {
   Truck,
   ChartNoAxesCombined,
   ShoppingCart,
+  LogOut,
+  LoaderCircle,
 } from "lucide-react";
 
 import {
@@ -41,6 +43,25 @@ import {
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+
+    setLoggingOut(true);
+
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+    } finally {
+      router.replace("/login");
+      router.refresh();
+      setLoggingOut(false);
+    }
+  };
 
   /*
    * ÖNEMLİ:
@@ -449,8 +470,25 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* FOOTER */}
-      <SidebarFooter className="border-t p-4">
-        <p className="text-xs text-muted-foreground">
+      <SidebarFooter className="border-t p-3">
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+        >
+          {loggingOut ? (
+            <LoaderCircle className="size-4 shrink-0 animate-spin" />
+          ) : (
+            <LogOut className="size-4 shrink-0" />
+          )}
+
+          <span>
+            {loggingOut ? "Çıkış yapılıyor..." : "Çıkış Yap"}
+          </span>
+        </button>
+
+        <p className="px-3 pt-1 text-xs text-muted-foreground">
           Car Audio Manager
         </p>
       </SidebarFooter>
