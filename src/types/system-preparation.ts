@@ -33,6 +33,16 @@ export interface SystemPreparationItem {
   brand?: string;
   model?: string;
   imageUrl?: string;
+
+  /*
+   * Teklif/PDF gibi snapshot kullanan akışlarda ürün özellikleri
+   * sonradan değişse bile teklif anındaki değerler korunur.
+   */
+  specifications?: Record<
+    string,
+    string | number | boolean
+  >;
+
   unitPriceUsd?: number;
   totalPriceUsd?: number;
 }

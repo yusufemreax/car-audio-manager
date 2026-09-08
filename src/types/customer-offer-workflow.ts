@@ -36,18 +36,26 @@ export interface CustomerOfferOrderSupplierPayment {
   supplier: ProductSupplier;
   paymentMethod: SupplierPurchasePaymentMethod;
   balanceUsedUsd: number;
+  customerCardAmountTry?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
 }
 
 export type CustomerOfferPaymentMethod =
   | "cash"
-  | "card";
+  | "card"
+  | "prepaid_card";
 
 export interface CustomerOfferCompletionPayment {
   method: CustomerOfferPaymentMethod;
   supplier?: ProductSupplier;
+  /** Kart veya önceden çekilen kart için müşteri kartından çekilen TL. */
   cardAmountTry: number;
+  /** Sadece montaj anında yeni kart çekiminde siteye yüklenecek USD. */
   cardAmountUsd: number;
+  /** Backend tekrar hesaplar; client yalnızca önizleme amaçlı gönderir. */
   cashAmountTry: number;
+  shippingFeeTry: number;
   exchangeRate?: number;
   exchangeRateDate?: string;
 }

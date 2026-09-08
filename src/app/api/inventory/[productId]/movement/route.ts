@@ -18,6 +18,7 @@ import {
 } from "@/lib/inventory-collection";
 
 import {
+  addCustomerCardSurplus,
   createSupplierOrder,
   deleteSupplierOrder,
   getSupplierBalance,
@@ -64,6 +65,7 @@ const stockMovementSchema =
     paymentMethod: z
       .enum([
         "card",
+        "customer_card",
         "balance",
       ])
       .optional(),
@@ -71,6 +73,21 @@ const stockMovementSchema =
     balanceUsedUsd: z
       .number()
       .min(0)
+      .optional(),
+
+    customerCardAmountTry: z
+      .number()
+      .min(0)
+      .optional(),
+
+    exchangeRate: z
+      .number()
+      .positive()
+      .optional(),
+
+    exchangeRateDate: z
+      .string()
+      .trim()
       .optional(),
   });
 
@@ -223,6 +240,19 @@ export async function POST(
     let cardAmountUsd =
       0;
 
+    let customerCardAmountTry =
+      0;
+    let customerCardChargedUsd =
+      0;
+    let customerCardAppliedUsd =
+      0;
+    let customerCardSurplusUsd =
+      0;
+    let exchangeRate =
+      0;
+    let exchangeRateDate =
+      "";
+
     if (type === "in") {
       const requestedSupplier =
         validation.data.supplier;
@@ -271,10 +301,14 @@ export async function POST(
 
       paymentMethod =
         validation.data.paymentMethod;
+      exchangeRate = Number(validation.data.exchangeRate ?? 0) || 0;
+      exchangeRateDate = String(validation.data.exchangeRateDate ?? "").trim();
 
       if (
         paymentMethod !==
           "card" &&
+        paymentMethod !==
+          "customer_card" &&
         paymentMethod !==
           "balance"
       ) {
@@ -385,11 +419,59 @@ export async function POST(
           );
       }
 
-      cardAmountUsd =
-        roundMoney(
-          purchaseTotalUsd -
-            balanceUsedUsd
+      if (paymentMethod === "customer_card") {
+        customerCardAmountTry = roundMoney(
+          Number(validation.data.customerCardAmountTry ?? 0) || 0
         );
+        if (customerCardAmountTry <= 0 || exchangeRate <= 0) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Müşteri kartı tutarı ve geçerli kur bilgisi zorunludur.",
+            },
+            { status: 400 }
+          );
+        }
+
+        customerCardChargedUsd = roundMoney(
+          customerCardAmountTry / exchangeRate
+        );
+
+        if (customerCardChargedUsd < purchaseTotalUsd) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: `Müşteri kartından çekilen tutar alış toplamını karşılamıyor. En az ${roundMoney(purchaseTotalUsd * exchangeRate).toFixed(2)} TL çekilmelidir.`,
+            },
+            { status: 400 }
+          );
+        }
+
+        customerCardAppliedUsd = purchaseTotalUsd;
+        customerCardSurplusUsd = roundMoney(
+          customerCardChargedUsd - purchaseTotalUsd
+        );
+        cardAmountUsd = 0;
+
+        if (customerCardSurplusUsd > 0) {
+          balanceMutation = await addCustomerCardSurplus(
+            supplier,
+            customerCardSurplusUsd,
+            {
+              amountTry: roundMoney(customerCardSurplusUsd * exchangeRate),
+              exchangeRate,
+              exchangeRateDate: exchangeRateDate || undefined,
+              note:
+                note ||
+                `${product.productCode ?? ""} ${product.brand ?? ""} ${product.model ?? ""} müşteri kartından kalan site bakiyesi`.trim(),
+            }
+          );
+        }
+      } else {
+        cardAmountUsd = roundMoney(
+          purchaseTotalUsd - balanceUsedUsd
+        );
+      }
     }
 
     const inventoryCollection =
@@ -569,6 +651,16 @@ export async function POST(
               purchaseTotalUsd,
               balanceUsedUsd,
               cardAmountUsd,
+              ...(paymentMethod === "customer_card"
+                ? {
+                    customerCardAmountTry,
+                    customerCardChargedUsd,
+                    customerCardAppliedUsd,
+                    customerCardSurplusUsd,
+                  }
+                : {}),
+              ...(exchangeRate > 0 ? { exchangeRate } : {}),
+              ...(exchangeRateDate ? { exchangeRateDate } : {}),
             }
           : {}),
         createdAt:
@@ -618,6 +710,16 @@ export async function POST(
           paymentMethod,
           balanceUsedUsd,
           cardAmountUsd,
+          ...(paymentMethod === "customer_card"
+            ? {
+                customerCardAmountTry,
+                customerCardChargedUsd,
+                customerCardAppliedUsd,
+                customerCardSurplusUsd,
+              }
+            : {}),
+          ...(exchangeRate > 0 ? { exchangeRate } : {}),
+          ...(exchangeRateDate ? { exchangeRateDate } : {}),
           stockMovementId:
             stockMovementId.toString(),
           note:
@@ -645,6 +747,16 @@ export async function POST(
               purchaseTotalUsd,
               balanceUsedUsd,
               cardAmountUsd,
+              ...(paymentMethod === "customer_card"
+                ? {
+                    customerCardAmountTry,
+                    customerCardChargedUsd,
+                    customerCardAppliedUsd,
+                    customerCardSurplusUsd,
+                  }
+                : {}),
+              ...(exchangeRate > 0 ? { exchangeRate } : {}),
+              ...(exchangeRateDate ? { exchangeRateDate } : {}),
               supplierBalanceUsd:
                 balanceMutation
                   ?.balanceAfterUsd,

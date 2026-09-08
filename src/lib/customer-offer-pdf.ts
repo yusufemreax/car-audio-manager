@@ -46,6 +46,56 @@ type OfferItem =
   CustomerSystemOffer["systemSnapshot"]["items"][number];
 
 /*
+ * Multimedya özellikleri şablon adına / templateId'ye bağlı değildir.
+ * Sistemde category = "multimedia" olan herhangi bir ürün varsa
+ * o ürün için özellik bölümü PDF'e eklenir.
+ */
+function isMultimediaItem(
+  item: OfferItem
+) {
+  return (
+    String(
+      item.category ?? ""
+    )
+      .trim()
+      .toLowerCase() ===
+    "multimedia"
+  );
+}
+
+type PdfSpecificationValue =
+  | string
+  | number
+  | boolean;
+
+type PdfSpecifications =
+  Record<
+    string,
+    PdfSpecificationValue
+  >;
+
+interface PdfCustomerVehicle {
+  id: string;
+  brand: string;
+  model: string;
+  year?: number;
+  plate?: string;
+}
+
+interface PdfCustomer {
+  id: string;
+  name: string;
+  vehicles?: PdfCustomerVehicle[];
+}
+
+interface PdfCustomerContext {
+  customerName: string;
+  vehicleBrand: string;
+  vehicleModel: string;
+  vehicleYear?: number;
+}
+
+/*
  * =========================================================
  * FORMATTERS
  * =========================================================
@@ -236,6 +286,308 @@ function getUnitPriceUsd(
   return 0;
 }
 
+function cleanString(
+  value: unknown
+) {
+  return typeof value ===
+    "string"
+    ? value.trim()
+    : "";
+}
+
+function getItemSnapshotSpecifications(
+  item: OfferItem
+): PdfSpecifications {
+  const value =
+    Reflect.get(
+      item as object,
+      "specifications"
+    );
+
+  if (
+    !value ||
+    typeof value !==
+      "object" ||
+    Array.isArray(value)
+  ) {
+    return {};
+  }
+
+  return {
+    ...(value as PdfSpecifications),
+  };
+}
+
+function getSpecificationText(
+  specifications: PdfSpecifications,
+  key: string,
+  unit?: string
+) {
+  const value =
+    specifications[key];
+
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return "-";
+  }
+
+  const text =
+    String(value).trim();
+
+  if (!unit) {
+    return text || "-";
+  }
+
+  const normalized =
+    text.toLocaleLowerCase(
+      "tr-TR"
+    );
+
+  if (
+    normalized.includes(
+      unit.toLocaleLowerCase(
+        "tr-TR"
+      )
+    )
+  ) {
+    return text;
+  }
+
+  return unit === '"'
+    ? `${text}"`
+    : `${text} ${unit}`;
+}
+
+function getSpecificationBoolean(
+  value: unknown
+) {
+  if (
+    typeof value ===
+    "boolean"
+  ) {
+    return value;
+  }
+
+  if (
+    typeof value ===
+    "number"
+  ) {
+    return value !== 0;
+  }
+
+  const normalized =
+    cleanString(value)
+      .toLocaleLowerCase(
+        "tr-TR"
+      );
+
+  return [
+    "true",
+    "1",
+    "var",
+    "evet",
+    "yes",
+  ].includes(normalized);
+}
+
+function getFeatureStatusCell(
+  available: boolean
+): Content {
+  return {
+    text:
+      available
+        ? "✓ VAR"
+        : "YOK",
+    bold:
+      true,
+    color:
+      available
+        ? "#15803d"
+        : "#6b7280",
+    fontSize:
+      8,
+    margin: [
+      6,
+      6,
+      6,
+      6,
+    ],
+  };
+}
+
+function getFeatureValueCell(
+  value: string
+): Content {
+  return {
+    text:
+      value || "-",
+    bold:
+      true,
+    color:
+      "#111827",
+    fontSize:
+      8,
+    margin: [
+      6,
+      6,
+      6,
+      6,
+    ],
+  };
+}
+
+function getFeatureLabelCell(
+  value: string
+): Content {
+  return {
+    text:
+      value,
+    color:
+      "#6b7280",
+    fontSize:
+      7,
+    bold:
+      true,
+    margin: [
+      6,
+      6,
+      6,
+      6,
+    ],
+  };
+}
+
+async function getOfferCustomerContext(
+  offer: CustomerSystemOffer
+): Promise<PdfCustomerContext> {
+  try {
+    const response =
+      await fetch(
+        "/api/customers",
+        {
+          cache:
+            "no-store",
+        }
+      );
+
+    const result: {
+      success?: boolean;
+      data?: PdfCustomer[];
+    } =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        "Müşteri bilgileri alınamadı."
+      );
+    }
+
+    const customer =
+      (result.data ?? []).find(
+        (current) =>
+          current.id ===
+          offer.customerId
+      );
+
+    const vehicle =
+      customer?.vehicles?.find(
+        (current) =>
+          current.id ===
+          offer.vehicleId
+      );
+
+    return {
+      customerName:
+        customer?.name ??
+        "-",
+      vehicleBrand:
+        vehicle?.brand ??
+        "-",
+      vehicleModel:
+        vehicle?.model ??
+        "-",
+      ...(typeof vehicle?.year ===
+      "number"
+        ? {
+            vehicleYear:
+              vehicle.year,
+          }
+        : {}),
+    };
+  } catch (error) {
+    console.error(
+      "PDF customer information could not be resolved:",
+      error
+    );
+
+    return {
+      customerName:
+        "-",
+      vehicleBrand:
+        "-",
+      vehicleModel:
+        "-",
+    };
+  }
+}
+
+async function getOfferNumberForPdf(
+  offer: CustomerSystemOffer
+) {
+  const storedNumber =
+    cleanString(
+      Reflect.get(
+        offer as object,
+        "offerNumber"
+      )
+    );
+
+  if (storedNumber) {
+    return storedNumber;
+  }
+
+  const response =
+    await fetch(
+      `/api/customer-system-offers/${encodeURIComponent(
+        offer.id
+      )}/offer-number`,
+      {
+        method:
+          "POST",
+      }
+    );
+
+  const result: {
+    success?: boolean;
+    message?: string;
+    data?: {
+      offerNumber?: string;
+    };
+  } =
+    await response.json();
+
+  const offerNumber =
+    cleanString(
+      result.data?.offerNumber
+    );
+
+  if (
+    !response.ok ||
+    !result.success ||
+    !offerNumber
+  ) {
+    throw new Error(
+      result.message ??
+      "Teklif numarası oluşturulamadı."
+    );
+  }
+
+  return offerNumber;
+}
+
 /*
  * =========================================================
  * BLOB -> DATA URL
@@ -376,35 +728,61 @@ function getPdfImageUrl(
  * =========================================================
  */
 
-async function getItemImageUrl(
-  item: OfferItem
-): Promise<string | null> {
-  /*
-   * Snapshot'ta imageUrl varsa
-   * öncelik her zaman ondadır.
-   */
-  if (
-    "imageUrl" in item &&
-    typeof item.imageUrl ===
-      "string" &&
-    item.imageUrl.trim()
-  ) {
-    return getPdfImageUrl(
-      item.imageUrl
-    );
-  }
+interface PdfItemProductData {
+  imageUrl: string | null;
+  specifications: PdfSpecifications;
+}
 
-  if (
-    !item.productId
-  ) {
-    return null;
+async function getItemProductData(
+  item: OfferItem
+): Promise<PdfItemProductData> {
+  const snapshotImageUrl =
+    (
+      "imageUrl" in item &&
+      typeof item.imageUrl ===
+        "string" &&
+      item.imageUrl.trim()
+    )
+      ? getPdfImageUrl(
+          item.imageUrl
+        )
+      : null;
+
+  const snapshotSpecifications =
+    getItemSnapshotSpecifications(
+      item
+    );
+
+  const needsProductFallback =
+    Boolean(
+      item.productId &&
+      (
+        !snapshotImageUrl ||
+        (
+          isMultimediaItem(
+            item
+          ) &&
+          Object.keys(
+            snapshotSpecifications
+          ).length === 0
+        )
+      )
+    );
+
+  if (!needsProductFallback) {
+    return {
+      imageUrl:
+        snapshotImageUrl,
+      specifications:
+        snapshotSpecifications,
+    };
   }
 
   try {
     const response =
       await fetch(
         `/api/products/${encodeURIComponent(
-          item.productId
+          item.productId!
         )}`,
         {
           cache:
@@ -412,38 +790,57 @@ async function getItemImageUrl(
         }
       );
 
-    const result:
-      {
-        success:
-          boolean;
-
-        data?:
-          Product;
-      } =
+    const result: {
+      success:
+        boolean;
+      data?:
+        Product;
+    } =
       await response.json();
 
     if (
       !response.ok ||
       !result.success ||
       !result.data
-        ?.imageUrl
     ) {
-      return null;
+      return {
+        imageUrl:
+          snapshotImageUrl,
+        specifications:
+          snapshotSpecifications,
+      };
     }
 
-    return getPdfImageUrl(
-      result.data.imageUrl
-    );
-  } catch (
-    error
-  ) {
+    return {
+      imageUrl:
+        snapshotImageUrl ??
+        (result.data.imageUrl
+          ? getPdfImageUrl(
+              result.data.imageUrl
+            )
+          : null),
+      specifications:
+        Object.keys(
+          snapshotSpecifications
+        ).length > 0
+          ? snapshotSpecifications
+          : {
+              ...(result.data.specifications ?? {}),
+            },
+    };
+  } catch (error) {
     console.error(
-      "Product image could not be resolved:",
+      "Product PDF data could not be resolved:",
       item.productId,
       error
     );
 
-    return null;
+    return {
+      imageUrl:
+        snapshotImageUrl,
+      specifications:
+        snapshotSpecifications,
+    };
   }
 }
 
@@ -553,6 +950,44 @@ export async function createCustomerOfferPdf(
       snapshot.commissionRate
     ) || 0;
 
+  const commissionMultiplier =
+    1 +
+    commissionRate /
+      100;
+
+  /*
+   * Teklif numarası MongoDB'de kalıcıdır. Eski tekliflerde
+   * PDF ilk açıldığında numara oluşturulup kayda yazılır.
+   */
+  const [
+    offerNumber,
+    customerContext,
+  ] = await Promise.all([
+    getOfferNumberForPdf(
+      offer
+    ),
+    getOfferCustomerContext(
+      offer
+    ),
+  ]);
+
+  const vehicleText =
+    [
+      customerContext.vehicleBrand,
+      customerContext.vehicleModel,
+      customerContext.vehicleYear
+        ? String(
+            customerContext.vehicleYear
+          )
+        : "",
+    ]
+      .filter(
+        (value) =>
+          value &&
+          value !== "-"
+      )
+      .join(" ") ||
+    "-";
 
   /*
    * =======================================================
@@ -590,15 +1025,15 @@ export async function createCustomerOfferPdf(
         async (
           item
         ) => {
-          const imageUrl =
-            await getItemImageUrl(
+          const productData =
+            await getItemProductData(
               item
             );
 
           const imageDataUrl =
-            imageUrl
+            productData.imageUrl
               ? await urlToDataUrl(
-                  imageUrl
+                  productData.imageUrl
                 )
               : null;
 
@@ -626,43 +1061,29 @@ export async function createCustomerOfferPdf(
             exchangeRate;
 
           /*
-           * Eski teklif snapshot'larında alan yoksa true kabul edilir.
+           * Kullanıcının istediği:
+           *
+           * BİRİM TUTAR
+           * KOMİSYONLU
            */
-          const itemWithCommission =
-            item as typeof item & {
-              isCommissionIncluded?: boolean;
-            };
-
-          const isCommissionIncluded =
-            itemWithCommission.isCommissionIncluded !==
-            false;
-
-          /*
-           * Dahil olan üründe komisyonlu,
-           * dahil olmayan üründe komisyonsuz fiyat gösterilir.
-           */
-          const displayedUnitPriceTry =
-            isCommissionIncluded
-              ? baseUnitPriceTry *
-                (
-                  1 +
-                  commissionRate /
-                    100
-                )
-              : baseUnitPriceTry;
+          const commissionedUnitPriceTry =
+            baseUnitPriceTry *
+            commissionMultiplier;
 
           /*
            * SATIR TOPLAMI
            */
           const totalTry =
-            displayedUnitPriceTry *
+            commissionedUnitPriceTry *
             quantity;
 
           return {
             item,
             imageDataUrl,
+            specifications:
+              productData.specifications,
             quantity,
-            displayedUnitPriceTry,
+            commissionedUnitPriceTry,
             totalTry,
           };
         }
@@ -789,6 +1210,284 @@ export async function createCustomerOfferPdf(
 
   /*
    * =======================================================
+   * MULTIMEDIA FEATURES
+   *
+   * Yalnızca sistemde Multimedya ürünü varsa gösterilir.
+   * Yeni snapshot'larda specifications doğrudan teklif
+   * anındaki üründen gelir. Eski tekliflerde ürün API'si
+   * fallback olarak kullanılır.
+   * =======================================================
+   */
+
+  const multimediaSections:
+    Content[] =
+    preparedItems
+      .filter(
+        (prepared) =>
+          isMultimediaItem(
+            prepared.item
+          )
+      )
+      .map(
+        (prepared) => {
+          const specifications =
+            prepared.specifications;
+
+          const displayTechnologyRaw =
+            getSpecificationText(
+              specifications,
+              "displayTechnology"
+            );
+
+          const displayTechnology =
+            displayTechnologyRaw ===
+              "ips"
+              ? "IPS"
+              : displayTechnologyRaw ===
+                  "qled"
+                ? "QLED"
+                : displayTechnologyRaw;
+
+          const features: Array<{
+            label: string;
+            value: Content;
+          }> = [
+            {
+              label: "RAM",
+              value:
+                getFeatureValueCell(
+                  getSpecificationText(
+                    specifications,
+                    "ram",
+                    "GB"
+                  )
+                ),
+            },
+            {
+              label: "HAFIZA",
+              value:
+                getFeatureValueCell(
+                  getSpecificationText(
+                    specifications,
+                    "storage",
+                    "GB"
+                  )
+                ),
+            },
+            {
+              label:
+                "EKRAN BOYUTU",
+              value:
+                getFeatureValueCell(
+                  getSpecificationText(
+                    specifications,
+                    "screenSize",
+                    '"'
+                  )
+                ),
+            },
+            {
+              label:
+                "ANDROID SÜRÜMÜ",
+              value:
+                getFeatureValueCell(
+                  getSpecificationText(
+                    specifications,
+                    "androidVersion"
+                  )
+                ),
+            },
+            {
+              label:
+                "GERİ GÖRÜŞ KAMERASI",
+              value:
+                getFeatureStatusCell(
+                  true
+                ),
+            },
+            {
+              label:
+                "ÖN KAYIT KAMERASI",
+              value:
+                getFeatureStatusCell(
+                  getSpecificationBoolean(
+                    specifications[
+                      "hasFrontRecordingCamera"
+                    ]
+                  )
+                ),
+            },
+            {
+              label: "CARPLAY",
+              value:
+                getFeatureStatusCell(
+                  getSpecificationBoolean(
+                    specifications[
+                      "hasCarPlay"
+                    ]
+                  )
+                ),
+            },
+          ];
+
+          if (
+            displayTechnology !==
+            "-"
+          ) {
+            features.push({
+              label:
+                "EKRAN TEKNOLOJİSİ",
+              value:
+                getFeatureValueCell(
+                  displayTechnology
+                ),
+            });
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(
+              specifications,
+              "hasDsp"
+            )
+          ) {
+            features.push({
+              label: "DSP",
+              value:
+                getFeatureStatusCell(
+                  getSpecificationBoolean(
+                    specifications[
+                      "hasDsp"
+                    ]
+                  )
+                ),
+            });
+          }
+
+          const featureRows:
+            Content[][] = [];
+
+          for (
+            let index = 0;
+            index <
+            features.length;
+            index += 2
+          ) {
+            const left =
+              features[index];
+            const right =
+              features[
+                index + 1
+              ];
+
+            featureRows.push([
+              getFeatureLabelCell(
+                left.label
+              ),
+              left.value,
+              right
+                ? getFeatureLabelCell(
+                    right.label
+                  )
+                : {
+                    text: "",
+                  },
+              right
+                ? right.value
+                : {
+                    text: "",
+                  },
+            ]);
+          }
+
+          const multimediaName =
+            [
+              prepared.item.brand,
+              prepared.item.model,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+
+          return {
+            unbreakable: true,
+            stack: [
+              {
+                columns: [
+                  {
+                    text:
+                      "Multimedya Özellikleri",
+                    bold: true,
+                    fontSize: 12,
+                    color:
+                      "#111827",
+                  },
+                  {
+                    text:
+                      multimediaName,
+                    alignment:
+                      "right",
+                    fontSize: 8,
+                    color:
+                      "#6b7280",
+                  },
+                ],
+                margin: [
+                  0,
+                  0,
+                  0,
+                  8,
+                ],
+              },
+              {
+                table: {
+                  widths: [
+                    "24%",
+                    "26%",
+                    "24%",
+                    "26%",
+                  ],
+                  body:
+                    featureRows,
+                },
+                layout: {
+                  fillColor: (
+                    rowIndex
+                  ) =>
+                    rowIndex % 2 ===
+                    0
+                      ? "#f8fafc"
+                      : "#ffffff",
+                  hLineColor: () =>
+                    "#e5e7eb",
+                  vLineColor: () =>
+                    "#e5e7eb",
+                  hLineWidth: () =>
+                    0.5,
+                  vLineWidth: () =>
+                    0.5,
+                  paddingLeft: () =>
+                    2,
+                  paddingRight: () =>
+                    2,
+                  paddingTop: () =>
+                    1,
+                  paddingBottom: () =>
+                    1,
+                },
+              },
+            ],
+            margin: [
+              0,
+              0,
+              0,
+              18,
+            ],
+          } as Content;
+        }
+      );
+
+  /*
+   * =======================================================
    * TABLE BODY
    * =======================================================
    */
@@ -837,7 +1536,7 @@ export async function createCustomerOfferPdf(
             item,
             imageDataUrl,
             quantity,
-            displayedUnitPriceTry,
+            commissionedUnitPriceTry,
             totalTry,
           } =
             prepared;
@@ -923,7 +1622,7 @@ export async function createCustomerOfferPdf(
 
             textCell(
               formatTry(
-                displayedUnitPriceTry
+                commissionedUnitPriceTry
               ),
               "right"
             ),
@@ -1038,10 +1737,7 @@ export async function createCustomerOfferPdf(
               image:
                 logoDataUrl,
 
-              fit: [
-                135,
-                58,
-              ],
+              width: 240,
 
               alignment:
                 "left",
@@ -1087,10 +1783,185 @@ export async function createCustomerOfferPdf(
                     0,
                   ],
                 },
+
+                {
+                  text:
+                    `Teklif No: ${offerNumber}`,
+                  bold:
+                    true,
+                  fontSize:
+                    9,
+                  alignment:
+                    "right",
+                  color:
+                    "#374151",
+                  margin: [
+                    0,
+                    5,
+                    0,
+                    0,
+                  ],
+                },
               ],
             },
           ],
 
+          margin: [
+            0,
+            0,
+            0,
+            18,
+          ],
+        },
+
+        /*
+         * ===============================================
+         * OFFER / CUSTOMER / VEHICLE INFO
+         * ===============================================
+         */
+
+        {
+          table: {
+            widths: [
+              "34%",
+              "46%",
+              "20%",
+            ],
+            body: [
+              [
+                {
+                  stack: [
+                    {
+                      text:
+                        "MÜŞTERİ",
+                      color:
+                        "#6b7280",
+                      fontSize:
+                        7,
+                      bold:
+                        true,
+                    },
+                    {
+                      text:
+                        customerContext.customerName,
+                      color:
+                        "#111827",
+                      fontSize:
+                        10,
+                      bold:
+                        true,
+                      margin: [
+                        0,
+                        4,
+                        0,
+                        0,
+                      ],
+                    },
+                  ],
+                  margin: [
+                    8,
+                    7,
+                    8,
+                    7,
+                  ],
+                },
+                {
+                  stack: [
+                    {
+                      text:
+                        "ARAÇ",
+                      color:
+                        "#6b7280",
+                      fontSize:
+                        7,
+                      bold:
+                        true,
+                    },
+                    {
+                      text:
+                        vehicleText,
+                      color:
+                        "#111827",
+                      fontSize:
+                        10,
+                      bold:
+                        true,
+                      margin: [
+                        0,
+                        4,
+                        0,
+                        0,
+                      ],
+                    },
+                  ],
+                  margin: [
+                    8,
+                    7,
+                    8,
+                    7,
+                  ],
+                },
+                {
+                  stack: [
+                    {
+                      text:
+                        "TEKLİF TARİHİ",
+                      color:
+                        "#6b7280",
+                      fontSize:
+                        7,
+                      bold:
+                        true,
+                    },
+                    {
+                      text:
+                        formatDate(
+                          offer.createdAt
+                        ),
+                      color:
+                        "#111827",
+                      fontSize:
+                        9,
+                      bold:
+                        true,
+                      margin: [
+                        0,
+                        4,
+                        0,
+                        0,
+                      ],
+                    },
+                  ],
+                  margin: [
+                    8,
+                    7,
+                    8,
+                    7,
+                  ],
+                },
+              ],
+            ],
+          },
+          layout: {
+            fillColor: () =>
+              "#f8fafc",
+            hLineColor: () =>
+              "#e5e7eb",
+            vLineColor: () =>
+              "#e5e7eb",
+            hLineWidth: () =>
+              0.6,
+            vLineWidth: () =>
+              0.6,
+            paddingLeft: () =>
+              0,
+            paddingRight: () =>
+              0,
+            paddingTop: () =>
+              0,
+            paddingBottom: () =>
+              0,
+          },
           margin: [
             0,
             0,
@@ -1190,9 +2061,13 @@ export async function createCustomerOfferPdf(
             0,
             0,
             0,
-            20,
+            multimediaSections.length > 0
+              ? 12
+              : 20,
           ],
         },
+
+        ...multimediaSections,
 
         /*
          * ===============================================
@@ -1261,7 +2136,7 @@ export async function createCustomerOfferPdf(
                   [
                     {
                       text:
-                        "Montaj Ücreti",
+                        "İşçilik Tutarı",
 
                       margin: [
                         5,
@@ -1506,8 +2381,17 @@ export async function createCustomerOfferPdf(
 
   const fileName =
     safeFileName(
-      snapshot.name ||
-      `teklif-${offer.id}`
+      [
+        offerNumber,
+        customerContext.customerName !==
+          "-"
+          ? customerContext.customerName
+          : "",
+        snapshot.name ||
+          "teklif",
+      ]
+        .filter(Boolean)
+        .join("-")
     );
 
   pdfMake

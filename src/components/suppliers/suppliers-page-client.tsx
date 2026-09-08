@@ -145,6 +145,8 @@ function movementLabel(
       return "Manuel Bakiye";
     case "customer_card_credit":
       return "Müşteri Kart Tahsilatı";
+    case "customer_card_surplus":
+      return "Müşteri Kartından Kalan Site Bakiyesi";
     case "stock_purchase_balance_usage":
       return "Stok Alışında Bakiye Kullanımı";
     default:
@@ -624,10 +626,13 @@ export function SuppliersPageClient() {
                                 {formatUsd(order.totalUsd)}
                               </TableCell>
                               <TableCell>
-                                {order.source === "customer_offer_order" ? (
-                                  <span className="text-xs text-muted-foreground">
-                                    Teklif siparişi
-                                  </span>
+                                {order.paymentMethod === "customer_card" ? (
+                                  <div className="text-xs">
+                                    <div>Müşteri Kartı</div>
+                                    <div className="text-muted-foreground">
+                                      Site bakiyesi: {formatUsd(order.customerCardSurplusUsd ?? 0)}
+                                    </div>
+                                  </div>
                                 ) : order.paymentMethod === "balance" ? (
                                   <div className="text-xs">
                                     <div>
@@ -640,7 +645,7 @@ export function SuppliersPageClient() {
                                 ) : (
                                   <div className="flex items-center gap-1 text-xs">
                                     <CreditCard className="size-3.5" />
-                                    Kart {formatUsd(order.cardAmountUsd ?? order.totalUsd)}
+                                    Kendi Kartım {formatUsd(order.cardAmountUsd ?? order.totalUsd)}
                                   </div>
                                 )}
                               </TableCell>

@@ -13,6 +13,10 @@ import {
   getDatabase,
 } from "@/lib/mongodb";
 
+import {
+  ensureAllCustomerOfferNumbers,
+} from "@/lib/customer-offer-number";
+
 import type {
   ProductDocument,
 } from "@/lib/products-collection";
@@ -23,6 +27,7 @@ import {
 
 import {
   addCustomerCardCredit,
+  addCustomerCardSurplus,
   createSupplierOrder,
   deleteSupplierOrder,
   getSupplierBalance,
@@ -67,14 +72,21 @@ interface OfferSnapshotItemDocument {
 interface OfferSnapshotDocument {
   name?: string;
   items?: OfferSnapshotItemDocument[];
+  productTotalTry?: number;
+  profitTry?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
 }
 
 interface CustomerOfferPaymentDocument {
-  method: "cash" | "card";
+  method: "cash" | "card" | "prepaid_card";
   supplier?: ProductSupplier;
   cardAmountTry: number;
   cardAmountUsd: number;
   cashAmountTry: number;
+  shippingFeeTry: number;
+  offerNetProfitTry: number;
+  netProfitAfterShippingTry: number;
   exchangeRate?: number;
   exchangeRateDate?: string;
   completedAt: Date;
@@ -86,6 +98,12 @@ interface CustomerOfferOrderSupplierPaymentDocument {
   orderTotalUsd: number;
   balanceUsedUsd: number;
   cardAmountUsd: number;
+  customerCardAmountTry?: number;
+  customerCardChargedUsd?: number;
+  customerCardAppliedUsd?: number;
+  customerCardSurplusUsd?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
 }
 
 interface CustomerSystemOfferDocument {
@@ -93,7 +111,9 @@ interface CustomerSystemOfferDocument {
   vehicleId: string;
   status: string;
   systemSnapshot: OfferSnapshotDocument;
+  offerNumber?: string;
   finalCustomerTotalTry?: number;
+  finalProfitTry?: number;
 
   stockRequirements?: CustomerOfferStockRequirement[];
   stockDeductedAt?: Date;
@@ -1364,6 +1384,8 @@ function getSupplierPaymentMap(
         payment.paymentMethod !==
           "card" &&
         payment.paymentMethod !==
+          "customer_card" &&
+        payment.paymentMethod !==
           "balance"
       )
     ) {
@@ -1702,83 +1724,121 @@ async function completeOrderAndConsumeStock(
         payment.paymentMethod;
 
       const balanceUsedUsd =
-        paymentMethod ===
-          "balance"
-          ? safeMoney(
-              payment.balanceUsedUsd
-            )
+        paymentMethod === "balance"
+          ? safeMoney(payment.balanceUsedUsd)
           : 0;
 
-      if (
-        paymentMethod ===
-          "balance" &&
-        balanceUsedUsd <= 0
-      ) {
+      if (paymentMethod === "balance" && balanceUsedUsd <= 0) {
         throw new CustomerOfferWorkflowError(
           `${group.supplier} için bakiyeden kullanılacak USD tutarını giriniz.`,
           400
         );
       }
 
-      if (
-        balanceUsedUsd >
-        group.totalUsd
-      ) {
+      if (balanceUsedUsd > group.totalUsd) {
         throw new CustomerOfferWorkflowError(
           `${group.supplier} için bakiyeden kullanılacak tutar sipariş toplamından büyük olamaz.`,
           400
         );
       }
 
-      const cardAmountUsd =
-        safeMoney(
-          group.totalUsd -
-            balanceUsedUsd
+      let cardAmountUsd = 0;
+      let customerCardAmountTry = 0;
+      let customerCardChargedUsd = 0;
+      let customerCardAppliedUsd = 0;
+      let customerCardSurplusUsd = 0;
+      let paymentExchangeRate = 0;
+      let paymentExchangeRateDate = "";
+
+      if (paymentMethod === "customer_card") {
+        customerCardAmountTry = safeMoney(payment.customerCardAmountTry);
+        paymentExchangeRate = safeMoney(
+          payment.exchangeRate ?? offer.systemSnapshot?.exchangeRate
+        );
+        paymentExchangeRateDate = cleanString(
+          payment.exchangeRateDate ?? offer.systemSnapshot?.exchangeRateDate
         );
 
-      if (
-        balanceUsedUsd > 0
-      ) {
-        const currentBalanceUsd =
-          await getSupplierBalance(
-            group.supplier
+        if (customerCardAmountTry <= 0 || paymentExchangeRate <= 0) {
+          throw new CustomerOfferWorkflowError(
+            `${group.supplier} için müşteri kartından çekilen TL tutarı ve kur bilgisi zorunludur.`,
+            400
           );
+        }
 
-        if (
-          balanceUsedUsd >
-          currentBalanceUsd
-        ) {
+        customerCardChargedUsd = safeMoney(
+          customerCardAmountTry / paymentExchangeRate
+        );
+
+        if (customerCardChargedUsd < group.totalUsd) {
+          throw new CustomerOfferWorkflowError(
+            `${group.supplier} müşteri kartı çekimi sipariş toplamını karşılamıyor.`,
+            400
+          );
+        }
+
+        customerCardAppliedUsd = group.totalUsd;
+        customerCardSurplusUsd = safeMoney(
+          customerCardChargedUsd - group.totalUsd
+        );
+
+        if (customerCardSurplusUsd > 0) {
+          const surplusMutation = await addCustomerCardSurplus(
+            group.supplier,
+            customerCardSurplusUsd,
+            {
+              amountTry: safeMoney(customerCardSurplusUsd * paymentExchangeRate),
+              exchangeRate: paymentExchangeRate,
+              exchangeRateDate: paymentExchangeRateDate || undefined,
+              customerOfferId: offer._id.toString(),
+              note: `Müşteri kartından sipariş sonrası kalan site bakiyesi: ${offer._id.toString()}`,
+            }
+          );
+          balanceMutations.push(surplusMutation);
+        }
+      } else {
+        cardAmountUsd = safeMoney(group.totalUsd - balanceUsedUsd);
+      }
+
+      if (balanceUsedUsd > 0) {
+        const currentBalanceUsd = await getSupplierBalance(group.supplier);
+
+        if (balanceUsedUsd > currentBalanceUsd) {
           throw new CustomerOfferWorkflowError(
             `${group.supplier} bakiyesi yetersiz. Mevcut bakiye: $${currentBalanceUsd.toFixed(2)}`,
             400
           );
         }
 
-        const balanceMutation =
-          await useSupplierBalanceForStock(
-            group.supplier,
-            balanceUsedUsd,
-            {
-              customerOfferId:
-                offer._id.toString(),
-              note:
-                `Müşteri teklifi sipariş bakiye kullanımı: ${offer._id.toString()}`,
-            }
-          );
-
-        balanceMutations.push(
-          balanceMutation
+        const balanceMutation = await useSupplierBalanceForStock(
+          group.supplier,
+          balanceUsedUsd,
+          {
+            customerOfferId: offer._id.toString(),
+            note: `Müşteri teklifi sipariş bakiye kullanımı: ${offer._id.toString()}`,
+          }
         );
+        balanceMutations.push(balanceMutation);
       }
 
       orderSupplierPayments.push({
-        supplier:
-          group.supplier,
+        supplier: group.supplier,
         paymentMethod,
-        orderTotalUsd:
-          group.totalUsd,
+        orderTotalUsd: group.totalUsd,
         balanceUsedUsd,
         cardAmountUsd,
+        ...(paymentMethod === "customer_card"
+          ? {
+              customerCardAmountTry,
+              customerCardChargedUsd,
+              customerCardAppliedUsd,
+              customerCardSurplusUsd,
+              exchangeRate: paymentExchangeRate,
+              ...(paymentExchangeRateDate
+                ? { exchangeRateDate: paymentExchangeRateDate }
+                : {}),
+            }
+          : {}),
       });
 
       let remainingBalance =
@@ -1817,10 +1877,16 @@ async function completeOrderAndConsumeStock(
               : 0;
 
         const allocatedCard =
-          safeMoney(
-            item.totalUsd -
-              allocatedBalance
-          );
+          paymentMethod === "customer_card"
+            ? 0
+            : safeMoney(
+                item.totalUsd - allocatedBalance
+              );
+
+        const allocatedCustomerCard =
+          paymentMethod === "customer_card"
+            ? item.totalUsd
+            : 0;
 
         remainingBalance =
           safeMoney(
@@ -1851,6 +1917,20 @@ async function completeOrderAndConsumeStock(
               allocatedBalance,
             cardAmountUsd:
               allocatedCard,
+            ...(safeMoney(offer.systemSnapshot?.exchangeRate) > 0
+              ? { exchangeRate: safeMoney(offer.systemSnapshot?.exchangeRate) }
+              : {}),
+            ...(cleanString(offer.systemSnapshot?.exchangeRateDate)
+              ? { exchangeRateDate: cleanString(offer.systemSnapshot?.exchangeRateDate) }
+              : {}),
+            ...(paymentMethod === "customer_card"
+              ? {
+                  customerCardAmountTry,
+                  customerCardChargedUsd,
+                  customerCardAppliedUsd: allocatedCustomerCard,
+                  customerCardSurplusUsd: index === 0 ? customerCardSurplusUsd : 0,
+                }
+              : {}),
             customerOfferId:
               offer._id.toString(),
             note:
@@ -1995,11 +2075,8 @@ async function completeOrderAndConsumeStock(
 }
 
 function buildCustomerPayment(
-  offer:
-    WithId<CustomerSystemOfferDocument>,
-  payment:
-    CustomerOfferCompletionPayment |
-    undefined,
+  offer: WithId<CustomerSystemOfferDocument>,
+  payment: CustomerOfferCompletionPayment | undefined,
   now: Date
 ): CustomerOfferPaymentDocument {
   if (!payment) {
@@ -2009,128 +2086,118 @@ function buildCustomerPayment(
     );
   }
 
-  const totalTry =
-    Math.max(
-      0,
-      safeMoney(
-        offer.finalCustomerTotalTry
-      )
-    );
+  const totalTry = Math.max(0, safeMoney(offer.finalCustomerTotalTry));
+  const productTotalTry = Math.max(
+    0,
+    safeMoney(offer.systemSnapshot?.productTotalTry)
+  );
+  const shippingFeeTry = safeMoney(payment.shippingFeeTry);
 
-  if (
-    payment.method ===
-    "cash"
-  ) {
+  if (shippingFeeTry < 0) {
+    throw new CustomerOfferWorkflowError(
+      "Kargo ücreti negatif olamaz.",
+      400
+    );
+  }
+
+  /*
+   * Müşteri teklifindeki GERÇEK net kazanç.
+   * Nihai müşteri toplamı müşteri indirimini de içerir. Bu nedenle
+   * ürün maliyetini nihai toplamdan çıkarmak teklif ekranındaki net
+   * kazancı doğrudan verir. Ciroya kargo düşülmüş snapshot yazılır.
+   */
+  const storedFinalProfitTry = Number(offer.finalProfitTry);
+  const offerNetProfitTry = Number.isFinite(storedFinalProfitTry)
+    ? roundMoney(storedFinalProfitTry)
+    : roundMoney(totalTry - productTotalTry);
+  const netProfitAfterShippingTry = roundMoney(
+    offerNetProfitTry - shippingFeeTry
+  );
+
+  const base = {
+    shippingFeeTry,
+    offerNetProfitTry,
+    netProfitAfterShippingTry,
+    completedAt: now,
+  };
+
+  if (payment.method === "cash") {
     return {
-      method:
-        "cash",
-      cardAmountTry:
-        0,
-      cardAmountUsd:
-        0,
-      cashAmountTry:
-        totalTry,
-      completedAt:
-        now,
+      method: "cash",
+      cardAmountTry: 0,
+      cardAmountUsd: 0,
+      cashAmountTry: totalTry,
+      ...base,
     };
   }
 
-  if (
-    payment.method !==
-    "card"
-  ) {
+  if (payment.method === "prepaid_card") {
+    const prepaidCardTry = safeMoney(payment.cardAmountTry);
+
+    if (prepaidCardTry <= 0) {
+      throw new CustomerOfferWorkflowError(
+        "Önceden çekilen kart tutarı 0'dan büyük olmalıdır.",
+        400
+      );
+    }
+    if (prepaidCardTry > totalTry) {
+      throw new CustomerOfferWorkflowError(
+        "Önceden çekilen kart tutarı teklif toplamından büyük olamaz.",
+        400
+      );
+    }
+
+    return {
+      method: "prepaid_card",
+      cardAmountTry: prepaidCardTry,
+      cardAmountUsd: 0,
+      cashAmountTry: roundMoney(Math.max(totalTry - prepaidCardTry, 0)),
+      ...base,
+    };
+  }
+
+  if (payment.method !== "card") {
     throw new CustomerOfferWorkflowError(
       "Geçerli ödeme yöntemi seçiniz.",
       400
     );
   }
 
-  if (
-    !isProductSupplier(
-      payment.supplier
-    )
-  ) {
+  if (!isProductSupplier(payment.supplier)) {
     throw new CustomerOfferWorkflowError(
       "Kart ödemesi için tedarikçi seçiniz.",
       400
     );
   }
 
-  const cardAmountTry =
-    safeMoney(
-      payment.cardAmountTry
-    );
+  const cardAmountTry = safeMoney(payment.cardAmountTry);
+  const cardAmountUsd = safeMoney(payment.cardAmountUsd);
 
-  const cardAmountUsd =
-    safeMoney(
-      payment.cardAmountUsd
-    );
-
-  if (
-    cardAmountTry <= 0
-  ) {
+  if (cardAmountTry <= 0 || cardAmountTry > totalTry) {
     throw new CustomerOfferWorkflowError(
-      "Karttan çekilecek TL tutarı 0'dan büyük olmalıdır.",
+      "Karttan çekilen TL tutarı 0'dan büyük ve teklif toplamını aşmayacak şekilde olmalıdır.",
       400
     );
   }
-
-  if (
-    cardAmountTry >
-    totalTry
-  ) {
-    throw new CustomerOfferWorkflowError(
-      "Kart tutarı teklif müşteri tutarından büyük olamaz.",
-      400
-    );
-  }
-
-  if (
-    cardAmountUsd <= 0
-  ) {
+  if (cardAmountUsd <= 0) {
     throw new CustomerOfferWorkflowError(
       "Tedarikçi bakiyesine girecek USD tutarı 0'dan büyük olmalıdır.",
       400
     );
   }
 
-  const exchangeRate =
-    safeMoney(
-      payment.exchangeRate
-    );
-
-  const exchangeRateDate =
-    cleanString(
-      payment.exchangeRateDate
-    );
+  const exchangeRate = safeMoney(payment.exchangeRate);
+  const exchangeRateDate = cleanString(payment.exchangeRateDate);
 
   return {
-    method:
-      "card",
-    supplier:
-      payment.supplier,
+    method: "card",
+    supplier: payment.supplier,
     cardAmountTry,
     cardAmountUsd,
-    cashAmountTry:
-      roundMoney(
-        Math.max(
-          totalTry -
-            cardAmountTry,
-          0
-        )
-      ),
-    ...(exchangeRate > 0
-      ? {
-          exchangeRate,
-        }
-      : {}),
-    ...(exchangeRateDate
-      ? {
-          exchangeRateDate,
-        }
-      : {}),
-    completedAt:
-      now,
+    cashAmountTry: roundMoney(Math.max(totalTry - cardAmountTry, 0)),
+    ...base,
+    ...(exchangeRate > 0 ? { exchangeRate } : {}),
+    ...(exchangeRateDate ? { exchangeRateDate } : {}),
   };
 }
 
@@ -2258,6 +2325,14 @@ async function getCollections() {
 export async function listCustomerOfferWorkflowOffers(): Promise<
   Record<string, unknown>[]
 > {
+  /*
+   * Yeni ve eski tüm tekliflerin sistem genelinde kalıcı
+   * bir teklif numarası bulunmasını garanti eder. Yeni teklif
+   * oluşturulduktan sonra liste yenilendiğinde numara otomatik
+   * atanır; eski kayıtlar da ilk listelenmelerinde tamamlanır.
+   */
+  await ensureAllCustomerOfferNumbers();
+
   const {
     offersCollection,
   } = await getCollections();

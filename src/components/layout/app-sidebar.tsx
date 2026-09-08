@@ -15,6 +15,8 @@ import {
   PackageCheck,
   Users,
   Truck,
+  ChartNoAxesCombined,
+  ShoppingCart,
 } from "lucide-react";
 
 import {
@@ -300,6 +302,27 @@ export function AppSidebar() {
               </AccordionItem>
             </Accordion>
 
+
+            <Link
+              href="/bulk-stock-order"
+              className={`
+                flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
+                transition-colors
+                ${
+                  pathname ===
+                  "/bulk-stock-order"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }
+              `}
+            >
+              <ShoppingCart className="size-4 shrink-0" />
+
+              <span>
+                Toplu Sipariş
+              </span>
+            </Link>
+
             <Link
               href="/suppliers"
               className={`
@@ -377,6 +400,28 @@ export function AppSidebar() {
 
               <span>
                 Hazır Sistemler
+              </span>
+            </Link>
+
+
+
+            <Link
+              href="/total-revenue"
+              className={`
+                flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
+                transition-colors
+                ${
+                  pathname ===
+                  "/total-revenue"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }
+              `}
+            >
+              <ChartNoAxesCombined className="size-4 shrink-0" />
+
+              <span>
+                Toplam Ciro
               </span>
             </Link>
 

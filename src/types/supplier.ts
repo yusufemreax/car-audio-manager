@@ -34,17 +34,10 @@ export function normalizeProductSuppliers(
   }
 
   const normalized = Array.from(
-    new Set(
-      value.filter(
-        isProductSupplier
-      )
-    )
+    new Set(value.filter(isProductSupplier))
   );
 
-  if (
-    normalized.length === 0 &&
-    fallbackToEgb
-  ) {
+  if (normalized.length === 0 && fallbackToEgb) {
     return [...DEFAULT_PRODUCT_SUPPLIERS];
   }
 
@@ -54,14 +47,21 @@ export function normalizeProductSuppliers(
 export type SupplierBalanceMovementType =
   | "manual_topup"
   | "customer_card_credit"
+  | "customer_card_surplus"
   | "stock_purchase_balance_usage";
 
 export type SupplierOrderSource =
   | "manual_stock"
   | "customer_offer_order";
 
+/**
+ * card: İşletme sahibinin kendi kartı (legacy kayıtlarla uyumlu)
+ * customer_card: Müşterinin kartı ile doğrudan tedarikçi/site alışverişi
+ * balance: Tedarikçi bakiyesi + kalan tutar işletme sahibinin kartı
+ */
 export type SupplierPurchasePaymentMethod =
   | "card"
+  | "customer_card"
   | "balance";
 
 export interface SupplierBalanceMovement {
@@ -69,6 +69,9 @@ export interface SupplierBalanceMovement {
   supplier: ProductSupplier;
   type: SupplierBalanceMovementType;
   amountUsd: number;
+  amountTry?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
   balanceBeforeUsd: number;
   balanceAfterUsd: number;
   note?: string;
@@ -90,9 +93,21 @@ export interface SupplierOrder {
   totalUsd: number;
   paymentMethod?: SupplierPurchasePaymentMethod;
   balanceUsedUsd?: number;
+  /** Kendi kartından ödenen USD. Legacy cardAmountUsd alanı aynı anlamda korunur. */
   cardAmountUsd?: number;
+  /** Müşteri kartından çekilen toplam TL. */
+  customerCardAmountTry?: number;
+  /** Müşteri kartı çekiminin işlem kuruyla USD karşılığı. */
+  customerCardChargedUsd?: number;
+  /** Müşteri kartından ürün alışına uygulanan USD. */
+  customerCardAppliedUsd?: number;
+  /** Alıştan sonra tedarikçi/site bakiyesinde kalan USD. */
+  customerCardSurplusUsd?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
   customerOfferId?: string;
   stockMovementId?: string;
+  batchOrderId?: string;
   note?: string;
   createdAt: string;
 }

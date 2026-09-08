@@ -46,6 +46,7 @@ interface ExchangeRateResponse {
   success: boolean;
   data?: {
     rate: number;
+    date?: string;
   };
 }
 
@@ -81,6 +82,13 @@ export function StockPageClient({
     usdTryRate,
     setUsdTryRate,
   ] = useState<number | null>(
+    null
+  );
+
+  const [
+    exchangeRateDate,
+    setExchangeRateDate,
+  ] = useState<string | null>(
     null
   );
 
@@ -186,6 +194,9 @@ export function StockPageClient({
         ) {
           setUsdTryRate(
             result.data.rate
+          );
+          setExchangeRateDate(
+            result.data.date ?? null
           );
         }
       } catch (error) {
@@ -363,6 +374,12 @@ export function StockPageClient({
         }
         onSubmit={
           handleMovement
+        }
+        usdTryRate={
+          usdTryRate
+        }
+        exchangeRateDate={
+          exchangeRateDate
         }
       />
     </>

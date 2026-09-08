@@ -41,6 +41,10 @@ export interface SystemPreparationItemDocument {
   brand?: string;
   model?: string;
   imageUrl?: string;
+  specifications?: Record<
+    string,
+    string | number | boolean
+  >;
   unitPriceUsd?: number;
   totalPriceUsd?: number;
 }
@@ -256,6 +260,13 @@ export function serializeSystemPreparation(
             ? {
                 imageUrl:
                   item.imageUrl,
+              }
+            : {}),
+          ...(item.specifications
+            ? {
+                specifications: {
+                  ...item.specifications,
+                },
               }
             : {}),
           ...(item.unitPriceUsd !==

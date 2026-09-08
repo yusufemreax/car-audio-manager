@@ -93,6 +93,12 @@ const PAYMENT_METHOD_ITEMS = [
     label:
       "Kart + Nakit",
   },
+  {
+    value:
+      "prepaid_card",
+    label:
+      "Önceden Çekilen Kart + Nakit",
+  },
 ];
 
 const SUPPLIER_ITEMS =
@@ -227,6 +233,11 @@ export function CustomerOfferPaymentDialog({
   ] = useState("");
 
   const [
+    shippingFeeTry,
+    setShippingFeeTry,
+  ] = useState("");
+
+  const [
     loadingRate,
     setLoadingRate,
   ] = useState(false);
@@ -261,6 +272,11 @@ export function CustomerOfferPaymentDialog({
       toNumber(
         cardAmountUsd
       )
+    );
+
+  const shippingFeeNumber =
+    toNumber(
+      shippingFeeTry
     );
 
   const cashAmountTry =
@@ -303,6 +319,9 @@ export function CustomerOfferPaymentDialog({
       ).toFixed(2)
     );
     setCardAmountUsd("");
+    setShippingFeeTry(
+      ""
+    );
     setExchangeRate(
       null
     );
@@ -448,6 +467,15 @@ export function CustomerOfferPaymentDialog({
       );
 
       if (
+        shippingFeeNumber < 0
+      ) {
+        setError(
+          "Kargo ücreti negatif olamaz."
+        );
+        return;
+      }
+
+      if (
         paymentMethod ===
         "cash"
       ) {
@@ -462,6 +490,10 @@ export function CustomerOfferPaymentDialog({
             cashAmountTry:
               roundMoney(
                 totalTry
+              ),
+            shippingFeeTry:
+              roundMoney(
+                shippingFeeNumber
               ),
             ...(exchangeRate &&
             exchangeRate > 0
@@ -504,6 +536,21 @@ export function CustomerOfferPaymentDialog({
         return;
       }
 
+      if (paymentMethod === "prepaid_card") {
+        const saved = await onSubmit({
+          method: "prepaid_card",
+          cardAmountTry: roundMoney(cardTryNumber),
+          cardAmountUsd: 0,
+          cashAmountTry,
+          shippingFeeTry: roundMoney(shippingFeeNumber),
+        });
+
+        if (saved) {
+          onOpenChange(false);
+        }
+        return;
+      }
+
       if (
         cardUsdNumber <= 0
       ) {
@@ -528,6 +575,10 @@ export function CustomerOfferPaymentDialog({
             ),
           cashAmountTry:
             cashAmountTry,
+          shippingFeeTry:
+            roundMoney(
+              shippingFeeNumber
+            ),
           ...(exchangeRate &&
           exchangeRate > 0
             ? {
@@ -606,11 +657,22 @@ export function CustomerOfferPaymentDialog({
                   value ===
                     "cash" ||
                   value ===
-                    "card"
+                    "card" ||
+                  value ===
+                    "prepaid_card"
                 ) {
                   setPaymentMethod(
                     value
                   );
+                  if (value === "prepaid_card") {
+                    setCardAmountTry("");
+                    setCardAmountUsd("");
+                  } else if (value === "card" && !cardAmountTry) {
+                    setCardAmountTry(roundMoney(totalTry).toFixed(2));
+                    if (exchangeRate && exchangeRate > 0) {
+                      setCardAmountUsd(roundMoney(totalTry / exchangeRate).toFixed(2));
+                    }
+                  }
                   setError(
                     null
                   );
@@ -630,8 +692,43 @@ export function CustomerOfferPaymentDialog({
                 <SelectItem value="card">
                   Kart + Nakit
                 </SelectItem>
+                <SelectItem value="prepaid_card">
+                  Önceden Çekilen Kart + Nakit
+                </SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="shippingFeeTry">
+              Kargo Ücreti (TL)
+            </Label>
+            <Input
+              id="shippingFeeTry"
+              type="number"
+              min="0"
+              step="0.01"
+              value={
+                shippingFeeTry
+              }
+              disabled={
+                submitting
+              }
+              placeholder="0,00"
+              onChange={(
+                event
+              ) => {
+                setShippingFeeTry(
+                  event.target.value
+                );
+                setError(
+                  null
+                );
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Bu tutar tamamlanan iş kaydında saklanır ve müşteri teklifindeki net kazançtan düşülerek gerçek kazanç hesaplanır.
+            </p>
           </div>
 
           {paymentMethod ===
@@ -788,6 +885,39 @@ export function CustomerOfferPaymentDialog({
                           : ""
                       }`
                     : "Kur bilgisi alınamadı."}
+              </div>
+            </div>
+          )}
+
+          {paymentMethod === "prepaid_card" && (
+            <div className="space-y-4 rounded-xl border p-4">
+              <div className="flex items-center gap-2 font-medium">
+                <CreditCard className="size-4" />
+                Önceden Çekilen Kart
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                Montajdan önce müşteriden çekilmiş kart tutarını girin. Bu işlem tedarikçi bakiyesine yeniden para eklemez; yalnızca müşteri tahsilat dağılımını kaydeder.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Önceden Çekilen Kart Tutarı (TL)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max={totalTry}
+                    step="0.01"
+                    value={cardAmountTry}
+                    disabled={submitting}
+                    onChange={(event) => {
+                      setCardAmountTry(event.target.value);
+                      setError(null);
+                    }}
+                  />
+                </div>
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <div className="text-xs text-muted-foreground">Montaj Sonrası Nakit Kalan</div>
+                  <div className="mt-1 text-lg font-semibold">{formatTry(cashAmountTry)}</div>
+                </div>
               </div>
             </div>
           )}

@@ -16,6 +16,7 @@ export const productCategorySchema =
 
   const multimediaFrameSizes = [
     "9",
+    "9.7",
     "10.1",
   ] as const;
 

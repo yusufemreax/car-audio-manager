@@ -104,6 +104,7 @@ interface SupplierPaymentDraft {
   paymentMethod:
     SupplierPurchasePaymentMethod;
   balanceUsedUsd: string;
+  customerCardAmountTry: string;
 }
 
 interface SupplierOrderGroup {
@@ -123,18 +124,24 @@ function createDefaultPaymentDrafts(): Record<
         "card",
       balanceUsedUsd:
         "0",
+      customerCardAmountTry:
+        "",
     },
     OZDEMIR: {
       paymentMethod:
         "card",
       balanceUsedUsd:
         "0",
+      customerCardAmountTry:
+        "",
     },
     Diğer: {
       paymentMethod:
         "card",
       balanceUsedUsd:
         "0",
+      customerCardAmountTry:
+        "",
     },
   };
 }
@@ -354,6 +361,16 @@ export function CustomerOfferWorkflowDetailDialog({
   ] = useState(false);
 
   const [
+    orderExchangeRate,
+    setOrderExchangeRate,
+  ] = useState<number | null>(null);
+
+  const [
+    orderExchangeRateDate,
+    setOrderExchangeRateDate,
+  ] = useState<string | null>(null);
+
+  const [
     supplierLoadError,
     setSupplierLoadError,
   ] = useState<string | null>(
@@ -505,6 +522,33 @@ export function CustomerOfferWorkflowDetailDialog({
     offer?.id,
   ]);
 
+  useEffect(() => {
+    if (!open || status !== "order_pending") {
+      return;
+    }
+
+    let cancelled = false;
+    const loadOrderRate = async () => {
+      try {
+        const response = await fetch("/api/exchange-rate", { cache: "no-store" });
+        const result = await response.json();
+        const rate = Number(result?.data?.rate);
+        if (!cancelled && response.ok && result?.success && Number.isFinite(rate) && rate > 0) {
+          setOrderExchangeRate(rate);
+          setOrderExchangeRateDate(result?.data?.date ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          const fallback = Number(offer?.systemSnapshot?.exchangeRate ?? 0);
+          setOrderExchangeRate(fallback > 0 ? fallback : null);
+          setOrderExchangeRateDate(null);
+        }
+      }
+    };
+    void loadOrderRate();
+    return () => { cancelled = true; };
+  }, [open, status, offer?.id, offer?.systemSnapshot?.exchangeRate]);
+
   const supplierGroups =
     useMemo(() => {
       const groups =
@@ -598,6 +642,10 @@ export function CustomerOfferWorkflowDetailDialog({
         0;
       let cardAmountUsd =
         0;
+      let customerCardAmountTry =
+        0;
+      let customerCardSurplusUsd =
+        0;
 
       for (
         const group of
@@ -631,25 +679,39 @@ export function CustomerOfferWorkflowDetailDialog({
             balanceUsedUsd +
               used
           );
-        cardAmountUsd =
-          roundMoney(
-            cardAmountUsd +
-              Math.max(
-                0,
-                group.totalUsd -
-                  used
-              )
-          );
+        const rate = Number(orderExchangeRate ?? offer?.systemSnapshot?.exchangeRate ?? 0) || 0;
+        const customerTry = draft.paymentMethod === "customer_card"
+          ? Math.max(0, roundMoney(Number(draft.customerCardAmountTry) || 0))
+          : 0;
+        const chargedUsd = rate > 0 ? roundMoney(customerTry / rate) : 0;
+
+        cardAmountUsd = roundMoney(
+          cardAmountUsd +
+            (draft.paymentMethod === "customer_card"
+              ? 0
+              : Math.max(0, group.totalUsd - used))
+        );
+        customerCardAmountTry = roundMoney(customerCardAmountTry + customerTry);
+        customerCardSurplusUsd = roundMoney(
+          customerCardSurplusUsd +
+            (draft.paymentMethod === "customer_card"
+              ? Math.max(0, chargedUsd - group.totalUsd)
+              : 0)
+        );
       }
 
       return {
         orderTotalUsd,
         balanceUsedUsd,
         cardAmountUsd,
+        customerCardAmountTry,
+        customerCardSurplusUsd,
       };
     }, [
       supplierGroups,
       paymentBySupplier,
+      offer?.systemSnapshot?.exchangeRate,
+      orderExchangeRate,
     ]);
 
   const handleOrderCompleted =
@@ -762,12 +824,38 @@ export function CustomerOfferWorkflowDetailDialog({
           return;
         }
 
+        const paymentExchangeRate = Number(orderExchangeRate ?? offer.systemSnapshot?.exchangeRate ?? 0) || 0;
+        const customerCardAmountTry =
+          draft.paymentMethod === "customer_card"
+            ? Math.max(0, roundMoney(Number(draft.customerCardAmountTry) || 0))
+            : 0;
+
+        if (draft.paymentMethod === "customer_card") {
+          if (paymentExchangeRate <= 0) {
+            setValidationError(`${group.supplier} için geçerli kur bilgisi bulunamadı.`);
+            return;
+          }
+          if (customerCardAmountTry <= 0) {
+            setValidationError(`${group.supplier} için müşteri kartından çekilen TL tutarını giriniz.`);
+            return;
+          }
+          if (roundMoney(customerCardAmountTry / paymentExchangeRate) < group.totalUsd) {
+            setValidationError(`${group.supplier} müşteri kartı çekimi sipariş toplamını karşılamıyor.`);
+            return;
+          }
+        }
+
         supplierPayments.push({
-          supplier:
-            group.supplier,
-          paymentMethod:
-            draft.paymentMethod,
+          supplier: group.supplier,
+          paymentMethod: draft.paymentMethod,
           balanceUsedUsd,
+          ...(draft.paymentMethod === "customer_card"
+            ? {
+                customerCardAmountTry,
+                exchangeRate: paymentExchangeRate,
+                exchangeRateDate: orderExchangeRateDate ?? undefined,
+              }
+            : {}),
         });
       }
 
@@ -1067,28 +1155,29 @@ export function CustomerOfferWorkflowDetailDialog({
                                   )
                                 : 0;
 
+                            const paymentExchangeRate =
+                              Number(orderExchangeRate ?? offer.systemSnapshot?.exchangeRate ?? 0) || 0;
+                            const customerCardTry =
+                              draft.paymentMethod === "customer_card"
+                                ? Math.max(0, roundMoney(Number(draft.customerCardAmountTry) || 0))
+                                : 0;
+                            const customerCardUsd =
+                              paymentExchangeRate > 0
+                                ? roundMoney(customerCardTry / paymentExchangeRate)
+                                : 0;
+                            const customerCardSurplusUsd =
+                              draft.paymentMethod === "customer_card"
+                                ? Math.max(0, roundMoney(customerCardUsd - group.totalUsd))
+                                : 0;
                             const cardAmount =
-                              Math.max(
-                                0,
-                                roundMoney(
-                                  group.totalUsd -
-                                    balanceUsed
-                                )
-                              );
+                              draft.paymentMethod === "customer_card"
+                                ? 0
+                                : Math.max(0, roundMoney(group.totalUsd - balanceUsed));
 
                             const paymentItems = [
-                              {
-                                value:
-                                  "card",
-                                label:
-                                  "Kart",
-                              },
-                              {
-                                value:
-                                  "balance",
-                                label:
-                                  "Bakiye + Kart",
-                              },
+                              { value: "card", label: "Kendi Kartım" },
+                              { value: "customer_card", label: "Müşteri Kartı" },
+                              { value: "balance", label: "Bakiye + Kendi Kartım" },
                             ];
 
                             return (
@@ -1149,11 +1238,15 @@ export function CustomerOfferWorkflowDetailDialog({
 
                                   <div className="rounded-lg border bg-background p-3">
                                     <div className="text-xs text-muted-foreground">
-                                      Kart Tutarı
+                                      {draft.paymentMethod === "customer_card"
+                                        ? "Site Bakiyesinde Kalacak"
+                                        : "Kendi Kartım"}
                                     </div>
                                     <div className="mt-1 font-semibold">
                                       {formatUsd(
-                                        cardAmount
+                                        draft.paymentMethod === "customer_card"
+                                          ? customerCardSurplusUsd
+                                          : cardAmount
                                       )}
                                     </div>
                                   </div>
@@ -1178,11 +1271,11 @@ export function CustomerOfferWorkflowDetailDialog({
                                       onValueChange={(
                                         value
                                       ) => {
-                                        const nextMethod:
-                                          SupplierPurchasePaymentMethod =
-                                            value ===
-                                            "balance"
-                                              ? "balance"
+                                        const nextMethod: SupplierPurchasePaymentMethod =
+                                          value === "balance"
+                                            ? "balance"
+                                            : value === "customer_card"
+                                              ? "customer_card"
                                               : "card";
 
                                         setPaymentBySupplier(
@@ -1194,12 +1287,11 @@ export function CustomerOfferWorkflowDetailDialog({
                                               ],
                                               paymentMethod:
                                                 nextMethod,
-                                              ...(nextMethod ===
-                                              "card"
-                                                ? {
-                                                    balanceUsedUsd:
-                                                      "0",
-                                                  }
+                                              ...(nextMethod !== "balance"
+                                                ? { balanceUsedUsd: "0" }
+                                                : {}),
+                                              ...(nextMethod !== "customer_card"
+                                                ? { customerCardAmountTry: "" }
                                                 : {}),
                                             },
                                           })
@@ -1214,17 +1306,19 @@ export function CustomerOfferWorkflowDetailDialog({
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="card">
-                                          Kart
+                                          Kendi Kartım
+                                        </SelectItem>
+                                        <SelectItem value="customer_card">
+                                          Müşteri Kartı
                                         </SelectItem>
                                         <SelectItem value="balance">
-                                          Bakiye + Kart
+                                          Bakiye + Kendi Kartım
                                         </SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </div>
 
-                                  {draft.paymentMethod ===
-                                  "balance" ? (
+                                  {draft.paymentMethod === "balance" ? (
                                     <div className="space-y-2">
                                       <Label>
                                         Bakiyeden Kullanılacak ($)
@@ -1275,10 +1369,36 @@ export function CustomerOfferWorkflowDetailDialog({
                                         )} kart olarak kaydedilir.
                                       </div>
                                     </div>
+                                  ) : draft.paymentMethod === "customer_card" ? (
+                                    <div className="space-y-2">
+                                      <Label>Müşteri Kartından Çekilen (TL)</Label>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={draft.customerCardAmountTry}
+                                        disabled={processing}
+                                        onChange={(event) => {
+                                          setPaymentBySupplier((previous) => ({
+                                            ...previous,
+                                            [group.supplier]: {
+                                              ...previous[group.supplier],
+                                              customerCardAmountTry: event.target.value,
+                                            },
+                                          }));
+                                          setValidationError(null);
+                                        }}
+                                      />
+                                      <div className="text-xs text-muted-foreground">
+                                        {paymentExchangeRate > 0
+                                          ? `Kur: 1 USD = ${paymentExchangeRate.toFixed(4)} TL • Site bakiyesinde kalacak: ${formatUsd(customerCardSurplusUsd)}`
+                                          : "Kur bilgisi bulunamadı."}
+                                      </div>
+                                    </div>
                                   ) : (
                                     <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm sm:self-end">
                                       <CreditCard className="size-4 text-muted-foreground" />
-                                      Toplamın tamamı kart ödemesi olarak kaydedilecek.
+                                      Toplamın tamamı kendi kartınızdan ödenmiş olarak kaydedilecek.
                                     </div>
                                   )}
                                 </div>
@@ -1288,7 +1408,7 @@ export function CustomerOfferWorkflowDetailDialog({
                         )}
                       </div>
 
-                      <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-3">
+                      <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
                           <div className="text-xs text-muted-foreground">
                             Genel Sipariş Toplamı
@@ -1311,12 +1431,21 @@ export function CustomerOfferWorkflowDetailDialog({
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">
-                            Toplam Kart
+                            Kendi Kartım
                           </div>
                           <div className="mt-1 font-semibold">
-                            {formatUsd(
-                              paymentSummary.cardAmountUsd
-                            )}
+                            {formatUsd(paymentSummary.cardAmountUsd)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">
+                            Müşteri Kartından Siteye Kalan
+                          </div>
+                          <div className="mt-1 font-semibold">
+                            {formatUsd(paymentSummary.customerCardSurplusUsd)}
+                          </div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">
+                            Müşteri kartı çekimi: {formatTry(paymentSummary.customerCardAmountTry)}
                           </div>
                         </div>
                       </div>

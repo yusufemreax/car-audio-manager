@@ -503,6 +503,7 @@ export const productCategoryDefinitions:
         unit: '"',
         options: [
           { value: "9", label: '9"' },
+          { value: "9.7", label: '9.7"' },
           { value: "10.1", label: '10.1"' },
         ],
       },

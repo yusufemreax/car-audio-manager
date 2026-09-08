@@ -39,6 +39,9 @@ interface SupplierBalanceMovementDocument {
   supplier: ProductSupplier;
   type: SupplierBalanceMovementType;
   amountUsd: number;
+  amountTry?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
   balanceBeforeUsd: number;
   balanceAfterUsd: number;
   note?: string;
@@ -60,8 +63,15 @@ interface SupplierOrderDocument {
   paymentMethod?: SupplierPurchasePaymentMethod;
   balanceUsedUsd?: number;
   cardAmountUsd?: number;
+  customerCardAmountTry?: number;
+  customerCardChargedUsd?: number;
+  customerCardAppliedUsd?: number;
+  customerCardSurplusUsd?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
   customerOfferId?: string;
   stockMovementId?: string;
+  batchOrderId?: string;
   note?: string;
   createdAt: Date;
 }
@@ -96,8 +106,15 @@ export interface SupplierOrderInput {
   paymentMethod?: SupplierPurchasePaymentMethod;
   balanceUsedUsd?: number;
   cardAmountUsd?: number;
+  customerCardAmountTry?: number;
+  customerCardChargedUsd?: number;
+  customerCardAppliedUsd?: number;
+  customerCardSurplusUsd?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
   customerOfferId?: string;
   stockMovementId?: string;
+  batchOrderId?: string;
   note?: string;
   createdAt?: Date;
 }
@@ -207,6 +224,9 @@ async function changeSupplierBalance(
     note?: string;
     customerOfferId?: string;
     stockMovementId?: string;
+    amountTry?: number;
+    exchangeRate?: number;
+    exchangeRateDate?: string;
   }
 ): Promise<SupplierBalanceMutation> {
   if (
@@ -315,6 +335,15 @@ async function changeSupplierBalance(
             movementType,
           amountUsd:
             roundedAmount,
+          ...(options?.amountTry !== undefined
+            ? { amountTry: roundMoney(Number(options.amountTry) || 0) }
+            : {}),
+          ...(options?.exchangeRate !== undefined
+            ? { exchangeRate: Number(options.exchangeRate) || 0 }
+            : {}),
+          ...(cleanString(options?.exchangeRateDate)
+            ? { exchangeRateDate: cleanString(options?.exchangeRateDate) }
+            : {}),
           balanceBeforeUsd,
           balanceAfterUsd,
           ...(cleanString(
@@ -433,6 +462,32 @@ export async function addCustomerCardCredit(
       amountUsd
     ),
     "customer_card_credit",
+    options
+  );
+}
+
+export async function addCustomerCardSurplus(
+  supplier: ProductSupplier,
+  amountUsd: number,
+  options?: {
+    amountTry?: number;
+    exchangeRate?: number;
+    exchangeRateDate?: string;
+    customerOfferId?: string;
+    stockMovementId?: string;
+    note?: string;
+  }
+) {
+  if (amountUsd <= 0) {
+    throw new Error(
+      "Müşteri kartından kalan bakiye 0'dan büyük olmalıdır."
+    );
+  }
+
+  return changeSupplierBalance(
+    supplier,
+    Math.abs(amountUsd),
+    "customer_card_surplus",
     options
   );
 }
@@ -619,6 +674,24 @@ export async function createSupplierOrder(
               ),
           }
         : {}),
+      ...(input.customerCardAmountTry !== undefined
+        ? { customerCardAmountTry: roundMoney(input.customerCardAmountTry) }
+        : {}),
+      ...(input.customerCardChargedUsd !== undefined
+        ? { customerCardChargedUsd: roundMoney(input.customerCardChargedUsd) }
+        : {}),
+      ...(input.customerCardAppliedUsd !== undefined
+        ? { customerCardAppliedUsd: roundMoney(input.customerCardAppliedUsd) }
+        : {}),
+      ...(input.customerCardSurplusUsd !== undefined
+        ? { customerCardSurplusUsd: roundMoney(input.customerCardSurplusUsd) }
+        : {}),
+      ...(input.exchangeRate !== undefined
+        ? { exchangeRate: Number(input.exchangeRate) || 0 }
+        : {}),
+      ...(cleanString(input.exchangeRateDate)
+        ? { exchangeRateDate: cleanString(input.exchangeRateDate) }
+        : {}),
       ...(cleanString(
         input.customerOfferId
       )
@@ -636,6 +709,16 @@ export async function createSupplierOrder(
             stockMovementId:
               cleanString(
                 input.stockMovementId
+              ),
+          }
+        : {}),
+      ...(cleanString(
+        input.batchOrderId
+      )
+        ? {
+            batchOrderId:
+              cleanString(
+                input.batchOrderId
               ),
           }
         : {}),
@@ -724,6 +807,24 @@ function serializeOrder(
             document.cardAmountUsd,
         }
       : {}),
+    ...(document.customerCardAmountTry !== undefined
+      ? { customerCardAmountTry: document.customerCardAmountTry }
+      : {}),
+    ...(document.customerCardChargedUsd !== undefined
+      ? { customerCardChargedUsd: document.customerCardChargedUsd }
+      : {}),
+    ...(document.customerCardAppliedUsd !== undefined
+      ? { customerCardAppliedUsd: document.customerCardAppliedUsd }
+      : {}),
+    ...(document.customerCardSurplusUsd !== undefined
+      ? { customerCardSurplusUsd: document.customerCardSurplusUsd }
+      : {}),
+    ...(document.exchangeRate !== undefined
+      ? { exchangeRate: document.exchangeRate }
+      : {}),
+    ...(document.exchangeRateDate
+      ? { exchangeRateDate: document.exchangeRateDate }
+      : {}),
     ...(document.customerOfferId
       ? {
           customerOfferId:
@@ -734,6 +835,12 @@ function serializeOrder(
       ? {
           stockMovementId:
             document.stockMovementId,
+        }
+      : {}),
+    ...(document.batchOrderId
+      ? {
+          batchOrderId:
+            document.batchOrderId,
         }
       : {}),
     ...(document.note
@@ -760,6 +867,15 @@ function serializeBalanceMovement(
       document.type,
     amountUsd:
       document.amountUsd,
+    ...(document.amountTry !== undefined
+      ? { amountTry: document.amountTry }
+      : {}),
+    ...(document.exchangeRate !== undefined
+      ? { exchangeRate: document.exchangeRate }
+      : {}),
+    ...(document.exchangeRateDate
+      ? { exchangeRateDate: document.exchangeRateDate }
+      : {}),
     balanceBeforeUsd:
       document.balanceBeforeUsd,
     balanceAfterUsd:

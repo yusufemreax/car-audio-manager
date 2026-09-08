@@ -573,6 +573,9 @@ export async function buildSystemPreparationData(
                   product.imageUrl,
               }
             : {}),
+          specifications: {
+            ...(product.specifications ?? {}),
+          },
           unitPriceUsd,
           totalPriceUsd:
             unitPriceUsd *
@@ -721,6 +724,9 @@ export async function buildSystemPreparationData(
                 product.imageUrl,
             }
           : {}),
+        specifications: {
+          ...(product.specifications ?? {}),
+        },
         unitPriceUsd,
         totalPriceUsd:
           unitPriceUsd *

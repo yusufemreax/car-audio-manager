@@ -132,6 +132,131 @@ interface PreparedSlot {
 
 /*
  * =========================================================
+ * PRODUCT CATEGORY CACHE
+ *
+ * Sistem Hazirlama ve Hazir Sistem Duzenleme ekraninda tum
+ * urun katalogunu ilk acilista beklemiyoruz. Kategori bazli
+ * lazy-load + memory cache kullanilir.
+ * =========================================================
+ */
+
+const PRODUCT_CATEGORY_CACHE_TTL_MS =
+  5 * 60 * 1000;
+
+const PRODUCT_CATEGORY_REVALIDATE_MS =
+  30 * 1000;
+
+interface ProductCategoryCacheEntry {
+  products: Product[];
+  loadedAt: number;
+}
+
+const productCategoryCache =
+  new Map<
+    ProductCategory,
+    ProductCategoryCacheEntry
+  >();
+
+const productCategoryRequests =
+  new Map<
+    ProductCategory,
+    Promise<Product[]>
+  >();
+
+async function fetchCategoryProductsCached(
+  category: ProductCategory,
+  options?: {
+    force?: boolean;
+  }
+) {
+  const now = Date.now();
+  const cached =
+    productCategoryCache.get(
+      category
+    );
+
+  if (
+    !options?.force &&
+    cached &&
+    now - cached.loadedAt <
+      PRODUCT_CATEGORY_CACHE_TTL_MS
+  ) {
+    return cached.products;
+  }
+
+  const inFlight =
+    productCategoryRequests.get(
+      category
+    );
+
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request =
+    (async () => {
+      const response =
+        await fetch(
+          `/api/products?category=${encodeURIComponent(
+            category
+          )}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+      const result: ApiResponse<
+        Product[]
+      > = await response.json();
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+        throw new Error(
+          result.message ??
+            "Urunler yenilenemedi."
+        );
+      }
+
+      const categoryProducts =
+        result.data ?? [];
+
+      productCategoryCache.set(
+        category,
+        {
+          products:
+            categoryProducts,
+          loadedAt:
+            Date.now(),
+        }
+      );
+
+      return categoryProducts;
+    })();
+
+  productCategoryRequests.set(
+    category,
+    request
+  );
+
+  try {
+    return await request;
+  } finally {
+    if (
+      productCategoryRequests.get(
+        category
+      ) === request
+    ) {
+      productCategoryRequests.delete(
+        category
+      );
+    }
+  }
+}
+
+/*
+ * =========================================================
  * FORMATTERS
  * =========================================================
  */
@@ -371,6 +496,64 @@ export function SystemPreparationPageClient() {
       [slots, productSelectionSlotId]
     );
 
+  const mergeCategoryProducts = (
+    category: ProductCategory,
+    categoryProducts: Product[]
+  ) => {
+    setProducts(
+      (previous) => [
+        ...previous.filter(
+          (product) =>
+            product.category !==
+            category
+        ),
+        ...categoryProducts,
+      ]
+    );
+  };
+
+  const prefetchCategory = (
+    category: ProductCategory
+  ) => {
+    const cached =
+      productCategoryCache.get(
+        category
+      );
+
+    if (
+      cached &&
+      Date.now() - cached.loadedAt <
+        PRODUCT_CATEGORY_CACHE_TTL_MS
+    ) {
+      mergeCategoryProducts(
+        category,
+        cached.products
+      );
+      return;
+    }
+
+    void fetchCategoryProductsCached(
+      category
+    )
+      .then(
+        (categoryProducts) => {
+          mergeCategoryProducts(
+            category,
+            categoryProducts
+          );
+        }
+      )
+      .catch(
+        (prefetchError) => {
+          console.warn(
+            "Urun kategorisi on yuklenemedi:",
+            category,
+            prefetchError
+          );
+        }
+      );
+  };
+
   const openProductSelection =
     async (
       slotId: string
@@ -386,61 +569,97 @@ export function SystemPreparationPageClient() {
         return;
       }
 
+      setError(null);
+
+      const cached =
+        productCategoryCache.get(
+          slot.category
+        );
+
+      /*
+       * Cache varsa dialog hemen acilir. 30 saniyeden eski veri
+       * arka planda yenilenir; kullanici bekletilmez.
+       */
+      if (cached) {
+        mergeCategoryProducts(
+          slot.category,
+          cached.products
+        );
+
+        setProductSelectionSlotId(
+          slotId
+        );
+
+        if (
+          Date.now() -
+            cached.loadedAt >=
+          PRODUCT_CATEGORY_REVALIDATE_MS
+        ) {
+          void fetchCategoryProductsCached(
+            slot.category,
+            {
+              force: true,
+            }
+          )
+            .then(
+              (categoryProducts) => {
+                mergeCategoryProducts(
+                  slot.category,
+                  categoryProducts
+                );
+
+                const refreshed =
+                  slot.product
+                    ? categoryProducts.find(
+                        (product) =>
+                          product.id ===
+                          slot.product?.id
+                      )
+                    : null;
+
+                if (refreshed) {
+                  updateSlot(
+                    slot.id,
+                    {
+                      product:
+                        refreshed,
+                    }
+                  );
+                }
+              }
+            )
+            .catch(
+              (refreshError) => {
+                console.warn(
+                  "Urun kategorisi arka planda yenilenemedi:",
+                  slot.category,
+                  refreshError
+                );
+              }
+            );
+        }
+
+        return;
+      }
+
       setRefreshingProductSlotId(
         slotId
       );
-      setError(null);
 
       try {
-        /*
-         * Her ürün seçiminde kategori yeniden okunur.
-         * Böylece kullanıcı ürün yönetiminde yeni bir ürün
-         * eklediyse sayfayı yenilemeden burada görebilir.
-         */
-        const response =
-          await fetch(
-            `/api/products?category=${encodeURIComponent(
-              slot.category
-            )}`,
-            {
-              cache:
-                "no-store",
-            }
+        const categoryProducts =
+          await fetchCategoryProductsCached(
+            slot.category
           );
 
-        const result: ApiResponse<
-          Product[]
-        > =
-          await response.json();
-
-        if (
-          !response.ok ||
-          !result.success
-        ) {
-          throw new Error(
-            result.message ??
-              "Ürünler yenilenemedi."
-          );
-        }
-
-        const refreshedCategoryProducts =
-          result.data ??
-          [];
-
-        setProducts(
-          (previous) => [
-            ...previous.filter(
-              (product) =>
-                product.category !==
-                slot.category
-            ),
-            ...refreshedCategoryProducts,
-          ]
+        mergeCategoryProducts(
+          slot.category,
+          categoryProducts
         );
 
         if (slot.product) {
           const refreshedSelectedProduct =
-            refreshedCategoryProducts.find(
+            categoryProducts.find(
               (product) =>
                 product.id ===
                 slot.product?.id
@@ -460,11 +679,11 @@ export function SystemPreparationPageClient() {
         setProductSelectionSlotId(
           slotId
         );
-      } catch (error) {
+      } catch (selectionError) {
         setError(
-          error instanceof Error
-            ? error.message
-            : "Ürünler yenilenemedi."
+          selectionError instanceof Error
+            ? selectionError.message
+            : "Urunler yenilenemedi."
         );
       } finally {
         setRefreshingProductSlotId(
@@ -688,9 +907,16 @@ export function SystemPreparationPageClient() {
         setError(null);
 
         try {
+          /*
+           * Duzenlemede tum hazir sistem listesini indirmiyoruz.
+           * Sadece editId kaydi okunur. Bu ayni zamanda liste GET'inin
+           * yaptigi toplu kur refresh maliyetini de kaldirir.
+           */
           const response =
             await fetch(
-              "/api/system-preparations?status=ready",
+              `/api/system-preparations/${encodeURIComponent(
+                editId
+              )}`,
               {
                 cache:
                   "no-store",
@@ -698,13 +924,14 @@ export function SystemPreparationPageClient() {
             );
 
           const result: ApiResponse<
-            SystemPreparation[]
+            SystemPreparation
           > =
             await response.json();
 
           if (
             !response.ok ||
-            !result.success
+            !result.success ||
+            !result.data
           ) {
             throw new Error(
               result.message ??
@@ -713,20 +940,7 @@ export function SystemPreparationPageClient() {
           }
 
           const preparation =
-            (
-              result.data ??
-              []
-            ).find(
-              (item) =>
-                item.id ===
-                editId
-            );
-
-          if (!preparation) {
-            throw new Error(
-              "Düzenlenecek hazır sistem bulunamadı."
-            );
-          }
+            result.data;
 
           if (cancelled) {
             return;
@@ -813,18 +1027,25 @@ export function SystemPreparationPageClient() {
 
   /*
    * =======================================================
-   * LOAD PRODUCT CATALOG
+   * HYDRATE EDITING PRODUCTS ONLY
    *
-   * Sistem hazırlama artık stok listesini kullanmaz.
-   * Ürünler doğrudan ürün kataloğundan (/api/products) gelir.
-   *
-   * Edit modunda mevcut ürün seçimlerini güncel katalog
-   * kayıtlarıyla tekrar eşleştiririz.
+   * Yeni sistem acilisinda hic urun katalogu yuklenmez.
+   * Hazir Sistem Duzenle'de ise sadece kayitta secili urun ID'leri
+   * paralel okunur. Kategori kataloglari daha sonra lazy-load olur.
    * =======================================================
    */
 
   useEffect(() => {
-    const loadProducts =
+    if (!editingPreparation) {
+      setLoadingProducts(
+        false
+      );
+      return;
+    }
+
+    let cancelled = false;
+
+    const hydrateEditingProducts =
       async () => {
         setLoadingProducts(
           true
@@ -833,101 +1054,169 @@ export function SystemPreparationPageClient() {
         setError(null);
 
         try {
-          const response =
-            await fetch(
-              "/api/products",
-              {
-                cache:
-                  "no-store",
-              }
-            );
-
-          const result: ApiResponse<
-            Product[]
-          > =
-            await response.json();
-
-          if (
-            !response.ok ||
-            !result.success
-          ) {
-            throw new Error(
-              result.message ??
-                "Ürünler alınamadı."
-            );
-          }
-
-          const loadedProducts =
-            result.data ??
-            [];
-
-          setProducts(
-            loadedProducts
-          );
-
-          if (
-            editingPreparation
-          ) {
-            setSlots(
-              editingPreparation.items.map(
-                (
-                  item
-                ): PreparedSlot => {
-                  const selectedProduct =
-                    item.productId
-                      ? loadedProducts.find(
-                          (product) =>
-                            product.id ===
-                            item.productId
-                        ) ?? null
-                      : null;
-
-                  return {
-                    id:
-                      item.id,
-                    source:
-                      item.source,
-                    templateItemId:
-                      item.templateItemId,
-                    label:
-                      item.label,
-                    category:
-                      item.category,
-                    subCategory:
-                      item.subCategory,
-                    quantity:
-                      item.quantity,
-                    isCommissionIncluded:
-                      item.isCommissionIncluded !==
-                      false,
-                    product:
-                      selectedProduct,
-                  };
-                }
+          const productIds =
+            Array.from(
+              new Set(
+                editingPreparation.items
+                  .map(
+                    (item) =>
+                      item.productId
+                  )
+                  .filter(
+                    (
+                      productId
+                    ): productId is string =>
+                      Boolean(
+                        productId
+                      )
+                  )
               )
             );
 
-            setCurrentPreparationId(
-              editingPreparation.id
+          const loadedProducts =
+            (
+              await Promise.all(
+                productIds.map(
+                  async (
+                    productId
+                  ) => {
+                    try {
+                      const response =
+                        await fetch(
+                          `/api/products/${encodeURIComponent(
+                            productId
+                          )}`,
+                          {
+                            cache:
+                              "no-store",
+                          }
+                        );
+
+                      const result: ApiResponse<
+                        Product
+                      > =
+                        await response.json();
+
+                      if (
+                        !response.ok ||
+                        !result.success ||
+                        !result.data
+                      ) {
+                        return null;
+                      }
+
+                      return result.data;
+                    } catch {
+                      return null;
+                    }
+                  }
+                )
+              )
+            ).filter(
+              (
+                product
+              ): product is Product =>
+                Boolean(
+                  product
+                )
             );
+
+          if (cancelled) {
+            return;
           }
-        } catch (error) {
+
+          const productMap =
+            new Map(
+              loadedProducts.map(
+                (product) => [
+                  product.id,
+                  product,
+                ]
+              )
+            );
+
+          setProducts(
+            (previous) => {
+              const loadedIds =
+                new Set(
+                  loadedProducts.map(
+                    (product) =>
+                      product.id
+                  )
+                );
+
+              return [
+                ...previous.filter(
+                  (product) =>
+                    !loadedIds.has(
+                      product.id
+                    )
+                ),
+                ...loadedProducts,
+              ];
+            }
+          );
+
+          setSlots(
+            editingPreparation.items.map(
+              (
+                item
+              ): PreparedSlot => ({
+                id:
+                  item.id,
+                source:
+                  item.source,
+                templateItemId:
+                  item.templateItemId,
+                label:
+                  item.label,
+                category:
+                  item.category,
+                subCategory:
+                  item.subCategory,
+                quantity:
+                  item.quantity,
+                isCommissionIncluded:
+                  item.isCommissionIncluded !==
+                  false,
+                product:
+                  item.productId
+                    ? productMap.get(
+                        item.productId
+                      ) ?? null
+                    : null,
+              })
+            )
+          );
+
+          setCurrentPreparationId(
+            editingPreparation.id
+          );
+        } catch (hydrateError) {
+          if (cancelled) {
+            return;
+          }
+
           setError(
-            error instanceof Error
-              ? error.message
-              : "Ürünler alınamadı."
+            hydrateError instanceof Error
+              ? hydrateError.message
+              : "Secili urunler alinamadi."
           );
         } finally {
-          setLoadingProducts(
-            false
-          );
+          if (!cancelled) {
+            setLoadingProducts(
+              false
+            );
+          }
         }
       };
 
-    void loadProducts();
-  }, [
-    editingPreparation,
-  ]);
+    void hydrateEditingProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editingPreparation]);
 
   /*
    * =======================================================
@@ -1117,6 +1406,10 @@ export function SystemPreparationPageClient() {
               null,
           },
         ]
+      );
+
+      prefetchCategory(
+        defaultCategory
       );
 
       setSuccessMessage(null);
@@ -2267,11 +2560,14 @@ export function SystemPreparationPageClient() {
                                     return;
                                   }
 
+                                  const nextCategory =
+                                    value as ProductCategory;
+
                                   updateSlot(
                                     slot.id,
                                     {
                                       category:
-                                        value as ProductCategory,
+                                        nextCategory,
 
                                       subCategory:
                                         undefined,
@@ -2284,6 +2580,14 @@ export function SystemPreparationPageClient() {
                                       product:
                                         null,
                                     }
+                                  );
+
+                                  /*
+                                   * Kullanici kategori secer secmez urunleri
+                                   * arka planda hazirla.
+                                   */
+                                  prefetchCategory(
+                                    nextCategory
                                   );
                                 }}
                               >
@@ -2498,6 +2802,16 @@ export function SystemPreparationPageClient() {
                                       refreshingProductSlotId ===
                                       slot.id
                                     }
+                                    onPointerEnter={() => {
+                                      prefetchCategory(
+                                        slot.category
+                                      );
+                                    }}
+                                    onFocus={() => {
+                                      prefetchCategory(
+                                        slot.category
+                                      );
+                                    }}
                                     onClick={() => {
                                       void openProductSelection(
                                         slot.id
@@ -2520,6 +2834,16 @@ export function SystemPreparationPageClient() {
                                   refreshingProductSlotId ===
                                   slot.id
                                 }
+                                onPointerEnter={() => {
+                                  prefetchCategory(
+                                    slot.category
+                                  );
+                                }}
+                                onFocus={() => {
+                                  prefetchCategory(
+                                    slot.category
+                                  );
+                                }}
                                 onClick={() => {
                                   void openProductSelection(
                                     slot.id
@@ -2909,7 +3233,7 @@ export function SystemPreparationPageClient() {
 
                   <p className="text-xs text-muted-foreground">
                     Komisyon yalnızca
-                    &quot;Komisyona Dahil&quot;
+                    "Komisyona Dahil"
                     seçili ürünler
                     üzerinden
                     hesaplanır.
