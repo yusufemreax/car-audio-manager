@@ -29,6 +29,7 @@ export const productCodePrefixes: Record<
   multimedia: "mlt",
 
   "multimedia-frame": "mfr",
+  "vehicle-camera": "CAM",
 };
 
 export async function getNextProductCode(

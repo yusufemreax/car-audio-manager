@@ -613,13 +613,8 @@ export async function DELETE(
 
     const inventoryRecord =
       await inventory.findOne({
-        productId: {
-          $in: [
-            objectId,
-            id,
-          ],
-        },
-      });
+        productId: objectId,
+    });
 
     if (
       inventoryRecord &&
@@ -640,12 +635,7 @@ export async function DELETE(
     }
 
     await inventory.deleteMany({
-      productId: {
-        $in: [
-          objectId,
-          id,
-        ],
-      },
+      productId: objectId,
     });
 
     await products.deleteOne({

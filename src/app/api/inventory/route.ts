@@ -73,7 +73,9 @@ export async function GET(
      */
     const products =
       await getProductsWithFreshPrices(
-        category ?? undefined
+        category && isProductCategory(category)
+          ? category
+          : undefined
       );
 
     if (

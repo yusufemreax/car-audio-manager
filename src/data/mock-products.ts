@@ -10,6 +10,10 @@ export const mockProducts: Product[] = [
 
     model: "SV 200.1",
 
+    priceUsd: 0,
+    suppliers: ["EGB"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
     category: "speaker",
 
     subCategory: "midrange",
@@ -30,6 +34,10 @@ export const mockProducts: Product[] = [
 
     model: "TS-W312",
 
+    priceUsd: 0,
+    suppliers: ["EGB"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
     category: "speaker",
 
     subCategory: "subwoofer",
@@ -50,6 +58,10 @@ export const mockProducts: Product[] = [
 
     model: "Stage3 637",
 
+    priceUsd: 0,
+    suppliers: ["EGB"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
     category: "speaker",
 
     subCategory: "coaxial",
@@ -70,6 +82,10 @@ export const mockProducts: Product[] = [
 
     model: "AP 6.5",
 
+    priceUsd: 0,
+    suppliers: ["EGB"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
     category: "speaker",
 
     subCategory: "midbass",
