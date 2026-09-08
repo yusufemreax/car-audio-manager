@@ -2136,7 +2136,7 @@ export async function createCustomerOfferPdf(
                   [
                     {
                       text:
-                        "İşçilik Tutarı",
+                        "Montaj Ücreti",
 
                       margin: [
                         5,
