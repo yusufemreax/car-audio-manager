@@ -1,10 +1,10 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 import {
   Box,
@@ -43,9 +43,110 @@ import {
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const router = useRouter();
 
   const [loggingOut, setLoggingOut] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authInvalid, setAuthInvalid] = useState(false);
+
+  const redirectToLogin = useCallback(() => {
+    const nextPath =
+      typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}`
+        : pathname;
+
+    window.location.replace(
+      `/login?next=${encodeURIComponent(nextPath)}`
+    );
+  }, [pathname]);
+
+  const checkSession = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auth/session", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      const result = (await response
+        .json()
+        .catch(() => null)) as
+        | {
+            success?: boolean;
+            authenticated?: boolean;
+          }
+        | null;
+
+      if (
+        !response.ok ||
+        !result?.success ||
+        !result.authenticated
+      ) {
+        setAuthInvalid(true);
+        redirectToLogin();
+        return false;
+      }
+
+      setAuthInvalid(false);
+      return true;
+    } catch {
+      setAuthInvalid(true);
+      redirectToLogin();
+      return false;
+    } finally {
+      setAuthChecking(false);
+    }
+  }, [redirectToLogin]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verify = async () => {
+      setAuthChecking(true);
+
+      const valid = await checkSession();
+
+      if (cancelled || !valid) {
+        return;
+      }
+
+      setAuthChecking(false);
+    };
+
+    void verify();
+
+    const handleFocus = () => {
+      void checkSession();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void checkSession();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    const intervalId = window.setInterval(() => {
+      void checkSession();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+      window.clearInterval(intervalId);
+    };
+  }, [pathname, checkSession]);
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -55,11 +156,11 @@ export function AppSidebar() {
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
+        cache: "no-store",
       });
     } finally {
-      router.replace("/login");
-      router.refresh();
-      setLoggingOut(false);
+      // Hard navigation Next.js client router cache'ini de temizler.
+      window.location.replace("/login");
     }
   };
 
@@ -131,7 +232,17 @@ export function AppSidebar() {
     );
 
   return (
-    <Sidebar collapsible="offcanvas">
+    <>
+      {(authChecking || authInvalid) && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <LoaderCircle className="size-5 animate-spin" />
+            Oturum kontrol ediliyor...
+          </div>
+        </div>
+      )}
+
+      <Sidebar collapsible="offcanvas">
       {/* HEADER */}
       <SidebarHeader className="border-b">
         <Link
@@ -492,6 +603,7 @@ export function AppSidebar() {
           Car Audio Manager
         </p>
       </SidebarFooter>
-    </Sidebar>
+      </Sidebar>
+    </>
   );
 }
