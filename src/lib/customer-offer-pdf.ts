@@ -63,6 +63,24 @@ function isMultimediaItem(
   );
 }
 
+/*
+ * Araç kamerası özellikleri de şablondan bağımsızdır.
+ * Sistemde category = "vehicle-camera" olan ürün varsa
+ * teklif çıktısında kamera özellikleri ayrıca gösterilir.
+ */
+function isVehicleCameraItem(
+  item: OfferItem
+) {
+  return (
+    String(
+      item.category ?? ""
+    )
+      .trim()
+      .toLowerCase() ===
+    "vehicle-camera"
+  );
+}
+
 type PdfSpecificationValue =
   | string
   | number
@@ -391,6 +409,75 @@ function getSpecificationBoolean(
     "evet",
     "yes",
   ].includes(normalized);
+}
+
+function getCameraSetupText(
+  value: unknown
+) {
+  const normalized =
+    cleanString(value)
+      .toLocaleLowerCase(
+        "tr-TR"
+      );
+
+  switch (normalized) {
+    case "front":
+      return "Ön";
+    case "front-rear":
+      return "Ön - Arka";
+    case "front-rear-interior":
+      return "Ön - Arka - İç";
+    default:
+      return cleanString(value) || "-";
+  }
+}
+
+function getCameraQualityText(
+  value: unknown
+) {
+  const text =
+    cleanString(value);
+
+  switch (
+    text.toLocaleLowerCase(
+      "tr-TR"
+    )
+  ) {
+    case "480p":
+      return "480p";
+    case "720p":
+      return "720p";
+    case "1080p":
+      return "1080p HD";
+    case "2k":
+      return "2K";
+    case "4k":
+      return "4K";
+    default:
+      return text || "-";
+  }
+}
+
+function getSdCardSupportText(
+  value: unknown
+) {
+  const text =
+    cleanString(value);
+
+  if (!text) {
+    return "-";
+  }
+
+  if (
+    /gb$/i.test(text)
+  ) {
+    return text.replace(
+      /\s*gb$/i,
+      " GB"
+    );
+  }
+
+  return `${text} GB`;
 }
 
 function getFeatureStatusCell(
@@ -933,7 +1020,7 @@ function safeFileName(
  * =========================================================
  */
 
-export async function createCustomerOfferPdf(
+async function buildCustomerOfferDocument(
   offer:
     CustomerSystemOffer
 ) {
@@ -1486,6 +1573,329 @@ export async function createCustomerOfferPdf(
         }
       );
 
+
+  /*
+   * =======================================================
+   * VEHICLE CAMERA FEATURES
+   *
+   * Şablondan bağımsızdır. Sistem içerisinde Araç Kamerası
+   * kategorisinden ürün varsa ürünün snapshot specifications
+   * alanından okunur. Eski tekliflerde ürün API fallback'i
+   * preparedItems aşamasında zaten uygulanır.
+   * =======================================================
+   */
+
+  const vehicleCameraSections:
+    Content[] =
+    preparedItems
+      .filter(
+        (prepared) =>
+          isVehicleCameraItem(
+            prepared.item
+          )
+      )
+      .map(
+        (prepared) => {
+          const specifications =
+            prepared.specifications;
+
+          const cameraSetup =
+            cleanString(
+              specifications[
+                "cameraSetup"
+              ]
+            ).toLocaleLowerCase(
+              "tr-TR"
+            );
+
+          const features: Array<{
+            label: string;
+            value: Content;
+          }> = [
+            {
+              label:
+                "KAMERA TİPİ",
+              value:
+                getFeatureValueCell(
+                  getCameraSetupText(
+                    specifications[
+                      "cameraSetup"
+                    ]
+                  )
+                ),
+            },
+            {
+              label:
+                "ÖN KAMERA KALİTESİ",
+              value:
+                getFeatureValueCell(
+                  getCameraQualityText(
+                    specifications[
+                      "frontCameraQuality"
+                    ]
+                  )
+                ),
+            },
+          ];
+
+          const hasRearCamera =
+            cameraSetup ===
+              "front-rear" ||
+            cameraSetup ===
+              "front-rear-interior" ||
+            Boolean(
+              cleanString(
+                specifications[
+                  "rearCameraQuality"
+                ]
+              )
+            );
+
+          const hasInteriorCamera =
+            cameraSetup ===
+              "front-rear-interior" ||
+            Boolean(
+              cleanString(
+                specifications[
+                  "interiorCameraQuality"
+                ]
+              )
+            );
+
+          if (hasRearCamera) {
+            features.push({
+              label:
+                "ARKA KAMERA KALİTESİ",
+              value:
+                getFeatureValueCell(
+                  getCameraQualityText(
+                    specifications[
+                      "rearCameraQuality"
+                    ]
+                  )
+                ),
+            });
+          }
+
+          if (hasInteriorCamera) {
+            features.push({
+              label:
+                "İÇ KAMERA KALİTESİ",
+              value:
+                getFeatureValueCell(
+                  getCameraQualityText(
+                    specifications[
+                      "interiorCameraQuality"
+                    ]
+                  )
+                ),
+            });
+          }
+
+          features.push(
+            {
+              label:
+                "ADAS DESTEĞİ",
+              value:
+                getFeatureStatusCell(
+                  getSpecificationBoolean(
+                    specifications[
+                      "hasAdas"
+                    ]
+                  )
+                ),
+            },
+            {
+              label:
+                "SALLANTI SENSÖRÜ",
+              value:
+                getFeatureStatusCell(
+                  getSpecificationBoolean(
+                    specifications[
+                      "hasShockSensor"
+                    ]
+                  )
+                ),
+            },
+            {
+              label:
+                "PARK HALİNDE KAYIT",
+              value:
+                getFeatureStatusCell(
+                  getSpecificationBoolean(
+                    specifications[
+                      "hasParkingMode"
+                    ]
+                  )
+                ),
+            },
+            {
+              label:
+                "SD KART DESTEĞİ",
+              value:
+                getFeatureValueCell(
+                  getSdCardSupportText(
+                    specifications[
+                      "sdCardSupport"
+                    ]
+                  )
+                ),
+            }
+          );
+
+          const featureRows:
+            Content[][] = [];
+
+          for (
+            let index = 0;
+            index <
+            features.length;
+            index += 2
+          ) {
+            const left =
+              features[index];
+            const right =
+              features[
+                index + 1
+              ];
+
+            featureRows.push([
+              getFeatureLabelCell(
+                left.label
+              ),
+              left.value,
+              right
+                ? getFeatureLabelCell(
+                    right.label
+                  )
+                : {
+                    text: "",
+                  },
+              right
+                ? right.value
+                : {
+                    text: "",
+                  },
+            ]);
+          }
+
+          const cameraName =
+            [
+              prepared.item.brand,
+              prepared.item.model,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+
+          return {
+            unbreakable: true,
+            stack: [
+              {
+                columns: [
+                  {
+                    text:
+                      "Araç Kamerası Özellikleri",
+                    bold: true,
+                    fontSize: 12,
+                    color:
+                      "#111827",
+                  },
+                  {
+                    text:
+                      cameraName,
+                    alignment:
+                      "right",
+                    fontSize: 8,
+                    color:
+                      "#6b7280",
+                  },
+                ],
+                margin: [
+                  0,
+                  0,
+                  0,
+                  8,
+                ],
+              },
+              {
+                table: {
+                  widths: [
+                    "24%",
+                    "26%",
+                    "24%",
+                    "26%",
+                  ],
+                  body:
+                    featureRows,
+                },
+                layout: {
+                  fillColor: (
+                    rowIndex
+                  ) =>
+                    rowIndex % 2 ===
+                    0
+                      ? "#f8fafc"
+                      : "#ffffff",
+                  hLineColor: () =>
+                    "#e5e7eb",
+                  vLineColor: () =>
+                    "#e5e7eb",
+                  hLineWidth: () =>
+                    0.5,
+                  vLineWidth: () =>
+                    0.5,
+                  paddingLeft: () =>
+                    2,
+                  paddingRight: () =>
+                    2,
+                  paddingTop: () =>
+                    1,
+                  paddingBottom: () =>
+                    1,
+                },
+              },
+            ],
+            margin: [
+              0,
+              0,
+              0,
+              18,
+            ],
+          } as Content;
+        }
+      );
+
+  const productFeatureSections =
+    [
+      ...multimediaSections,
+      ...vehicleCameraSections,
+    ];
+
+  /*
+   * Bir multimedya + bir kamera gibi normal senaryolarda tüm
+   * özellik bloklarını beraber tutuyoruz. Birinci sayfada yer
+   * kalmazsa iki blok da birlikte ikinci sayfaya geçer. Çok sayıda
+   * özellik bloğu varsa tek bir sayfaya zorlamamak için her bölüm
+   * kendi başına unbreakable olarak akmaya devam eder.
+   */
+  const productFeatureContent:
+    Content[] =
+    productFeatureSections.length ===
+    0
+      ? []
+      : productFeatureSections.length <=
+          2
+        ? [
+            {
+              unbreakable:
+                true,
+              stack:
+                productFeatureSections,
+            } as Content,
+          ]
+        : productFeatureSections;
+
   /*
    * =======================================================
    * TABLE BODY
@@ -1737,7 +2147,10 @@ export async function createCustomerOfferPdf(
               image:
                 logoDataUrl,
 
-              width: 240,
+              fit: [
+                185,
+                78,
+              ],
 
               alignment:
                 "left",
@@ -2061,13 +2474,13 @@ export async function createCustomerOfferPdf(
             0,
             0,
             0,
-            multimediaSections.length > 0
+            productFeatureSections.length > 0
               ? 12
               : 20,
           ],
         },
 
-        ...multimediaSections,
+        ...productFeatureContent,
 
         /*
          * ===============================================
@@ -2136,7 +2549,7 @@ export async function createCustomerOfferPdf(
                   [
                     {
                       text:
-                        "Montaj Ücreti",
+                        "İşçilik Tutarı",
 
                       margin: [
                         5,
@@ -2394,11 +2807,280 @@ export async function createCustomerOfferPdf(
         .join("-")
     );
 
-  pdfMake
-    .createPdf(
-      documentDefinition
-    )
-    .download(
-      `${fileName}.pdf`
+  return {
+    documentDefinition,
+    fileName,
+  };
+}
+
+function downloadBlob(
+  blob: Blob,
+  fileName: string
+) {
+  const url =
+    URL.createObjectURL(
+      blob
     );
+
+  const anchor =
+    document.createElement(
+      "a"
+    );
+
+  anchor.href =
+    url;
+  anchor.download =
+    fileName;
+
+  document.body.appendChild(
+    anchor
+  );
+
+  anchor.click();
+  anchor.remove();
+
+  window.setTimeout(
+    () => {
+      URL.revokeObjectURL(
+        url
+      );
+    },
+    1000
+  );
+}
+
+async function createPdfBlob(
+  documentDefinition:
+    TDocumentDefinitions
+): Promise<Blob> {
+  const blob =
+    await pdfMake
+      .createPdf(
+        documentDefinition
+      )
+      .getBlob();
+
+  if (!blob) {
+    throw new Error(
+      "PDF blob oluşturulamadı."
+    );
+  }
+
+  return blob;
+}
+
+async function convertPdfBlobToJpgBlobs(
+  pdfBlob: Blob
+): Promise<Blob[]> {
+  const pdfjs =
+    await import(
+      "pdfjs-dist/legacy/build/pdf.mjs"
+    );
+
+  if (
+    !pdfjs
+      .GlobalWorkerOptions
+      .workerSrc
+  ) {
+    pdfjs.GlobalWorkerOptions.workerSrc =
+      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
+  }
+
+  const pdfBytes =
+    new Uint8Array(
+      await pdfBlob.arrayBuffer()
+    );
+
+  const pdf =
+    await pdfjs
+      .getDocument({
+        data:
+          pdfBytes,
+      })
+      .promise;
+
+  const renderScale =
+    Math.max(
+      2,
+      Math.min(
+        window.devicePixelRatio ||
+          1,
+        2.5
+      )
+    );
+
+  const jpgBlobs:
+    Blob[] = [];
+
+  for (
+    let pageNumber = 1;
+    pageNumber <=
+    pdf.numPages;
+    pageNumber += 1
+  ) {
+    const page =
+      await pdf.getPage(
+        pageNumber
+      );
+
+    const viewport =
+      page.getViewport({
+        scale:
+          renderScale,
+      });
+
+    const canvas =
+      document.createElement(
+        "canvas"
+      );
+
+    const context =
+      canvas.getContext(
+        "2d"
+      );
+
+    if (!context) {
+      throw new Error(
+        "JPG oluşturmak için canvas hazırlanamadı."
+      );
+    }
+
+    canvas.width =
+      Math.ceil(
+        viewport.width
+      );
+
+    canvas.height =
+      Math.ceil(
+        viewport.height
+      );
+
+    context.fillStyle =
+      "#ffffff";
+
+    context.fillRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    await page.render({
+      canvasContext:
+        context,
+      viewport,
+    } as any).promise;
+
+    const jpgBlob =
+      await new Promise<Blob>(
+        (resolve, reject) => {
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(
+                  new Error(
+                    `JPG sayfa ${pageNumber} oluşturulamadı.`
+                  )
+                );
+                return;
+              }
+
+              resolve(blob);
+            },
+            "image/jpeg",
+            0.95
+          );
+        }
+      );
+
+    jpgBlobs.push(
+      jpgBlob
+    );
+
+    page.cleanup();
+  }
+
+  if (
+    jpgBlobs.length ===
+    0
+  ) {
+    throw new Error(
+      "JPG oluşturulacak PDF sayfası bulunamadı."
+    );
+  }
+
+  return jpgBlobs;
+}
+
+export async function createCustomerOfferPdf(
+  offer:
+    CustomerSystemOffer
+) {
+  const {
+    documentDefinition,
+    fileName,
+  } =
+    await buildCustomerOfferDocument(
+      offer
+    );
+
+  const pdfBlob =
+    await createPdfBlob(
+      documentDefinition
+    );
+
+  downloadBlob(
+    pdfBlob,
+    `${fileName}.pdf`
+  );
+}
+
+export async function createCustomerOfferJpg(
+  offer:
+    CustomerSystemOffer
+) {
+  const {
+    documentDefinition,
+    fileName,
+  } =
+    await buildCustomerOfferDocument(
+      offer
+    );
+
+  const pdfBlob =
+    await createPdfBlob(
+      documentDefinition
+    );
+
+  const jpgBlobs =
+    await convertPdfBlobToJpgBlobs(
+      pdfBlob
+    );
+
+  if (
+    jpgBlobs.length ===
+    1
+  ) {
+    downloadBlob(
+      jpgBlobs[0],
+      `${fileName}.jpg`
+    );
+    return;
+  }
+
+  jpgBlobs.forEach(
+    (jpgBlob, index) => {
+      window.setTimeout(
+        () => {
+          downloadBlob(
+            jpgBlob,
+            `${fileName}-sayfa-${
+              index + 1
+            }.jpg`
+          );
+        },
+        index * 250
+      );
+    }
+  );
 }

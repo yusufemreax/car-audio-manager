@@ -14,6 +14,7 @@ import {
   CircleCheckBig,
   Eye,
   FileDown,
+  FileImage,
   Loader2,
   PackageCheck,
   Plus,
@@ -76,6 +77,7 @@ import {
 } from "@/components/ui/button";
 
 import {
+  createCustomerOfferJpg,
   createCustomerOfferPdf,
 } from "@/lib/customer-offer-pdf";
 
@@ -283,6 +285,11 @@ export function CustomersPageClient() {
   const [
     creatingPdfId,
     setCreatingPdfId,
+  ] = useState<string | null>(null);
+
+  const [
+    creatingJpgId,
+    setCreatingJpgId,
   ] = useState<string | null>(null);
 
   const [
@@ -747,6 +754,39 @@ export function CustomersPageClient() {
       }
     };
 
+  const createJpg =
+    async (
+      offer:
+        CustomerSystemOffer
+    ) => {
+      try {
+        setActionError(null);
+
+        setCreatingJpgId(
+          offer.id
+        );
+
+        await createCustomerOfferJpg(
+          offer
+        );
+      } catch (error) {
+        console.error(
+          "JPG oluşturma hatası:",
+          error
+        );
+
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "JPG oluşturulamadı."
+        );
+      } finally {
+        setCreatingJpgId(
+          null
+        );
+      }
+    };
+
   /*
    * =======================================================
    * DELETE OFFER
@@ -944,6 +984,10 @@ export function CustomersPageClient() {
       creatingPdfId ===
       offer.id;
 
+    const isCreatingJpg =
+      creatingJpgId ===
+      offer.id;
+
     const isProcessing =
       processingOfferId ===
       offer.id;
@@ -1115,6 +1159,7 @@ export function CustomersPageClient() {
               size="sm"
               disabled={
                 isCreatingPdf ||
+                isCreatingJpg ||
                 isDeleting ||
                 isProcessing
               }
@@ -1135,6 +1180,33 @@ export function CustomersPageClient() {
                 : "PDF Oluştur"}
             </Button>
 
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={
+                isCreatingPdf ||
+                isCreatingJpg ||
+                isDeleting ||
+                isProcessing
+              }
+              onClick={() => {
+                void createJpg(
+                  offer
+                );
+              }}
+            >
+              {isCreatingJpg ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <FileImage className="size-4" />
+              )}
+
+              {isCreatingJpg
+                ? "JPG Oluşturuluyor..."
+                : "JPG Oluştur"}
+            </Button>
+
             {canDelete && (
               <Button
                 type="button"
@@ -1144,6 +1216,7 @@ export function CustomersPageClient() {
                 disabled={
                   isDeleting ||
                   isCreatingPdf ||
+                  isCreatingJpg ||
                   isProcessing
                 }
                 onClick={() => {
