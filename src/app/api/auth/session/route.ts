@@ -7,6 +7,7 @@ import {
 
 import {
   AUTH_COOKIE_NAME,
+  isAuthSessionConfigured,
   verifySessionToken,
 } from "@/lib/auth-session";
 
@@ -27,6 +28,9 @@ export async function GET() {
     {
       success: true,
       authenticated: Boolean(session),
+      configured: isAuthSessionConfigured(),
+      cookiePresent: Boolean(token),
+      user: session?.sub ?? null,
     },
     {
       headers: {

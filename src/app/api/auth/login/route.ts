@@ -7,6 +7,7 @@ import {
   AUTH_COOKIE_NAME,
   AUTH_SESSION_MAX_AGE_SECONDS,
   createSessionToken,
+  isAuthSessionConfigured,
 } from "@/lib/auth-session";
 import { verifyPassword } from "@/lib/auth-password";
 
@@ -18,7 +19,6 @@ function cleanString(value: unknown) {
 }
 
 async function invalidLoginResponse() {
-  // Basit brute-force yavaslatmasi.
   await new Promise((resolve) => setTimeout(resolve, 650));
 
   return NextResponse.json(
@@ -28,6 +28,9 @@ async function invalidLoginResponse() {
     },
     {
       status: 401,
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      },
     }
   );
 }
@@ -38,26 +41,27 @@ export async function POST(request: NextRequest) {
       process.env.APP_LOGIN_USER?.trim();
     const configuredPasswordHash =
       process.env.APP_LOGIN_PASSWORD_HASH?.trim();
-    const authSecret = process.env.APP_AUTH_SECRET?.trim();
 
     if (
       !configuredUsername ||
       !configuredPasswordHash ||
-      !authSecret ||
-      authSecret.length < 32
+      !isAuthSessionConfigured()
     ) {
       console.error(
-        "Login configuration missing: APP_LOGIN_USER, APP_LOGIN_PASSWORD_HASH veya APP_AUTH_SECRET tanımlı değil."
+        "Login configuration missing: APP_LOGIN_USER, APP_LOGIN_PASSWORD_HASH veya APP_SESSION_TOKEN tanımlı değil."
       );
 
       return NextResponse.json(
         {
           success: false,
           message:
-            "Giriş sistemi henüz yapılandırılmamış. Vercel Environment Variables ayarlarını kontrol edin.",
+            "Giriş sistemi yapılandırılmamış. Vercel Environment Variables ayarlarını kontrol edin.",
         },
         {
           status: 500,
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          },
         }
       );
     }
@@ -94,10 +98,19 @@ export async function POST(request: NextRequest) {
       configuredUsername
     );
 
-    const response = NextResponse.json({
-      success: true,
-      message: "Giriş başarılı.",
-    });
+    const response = NextResponse.json(
+      {
+        success: true,
+        message: "Giriş başarılı.",
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
 
     response.cookies.set({
       name: AUTH_COOKIE_NAME,
@@ -120,6 +133,9 @@ export async function POST(request: NextRequest) {
       },
       {
         status: 500,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
       }
     );
   }

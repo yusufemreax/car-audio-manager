@@ -75,15 +75,16 @@ async function main() {
 
   const salt = randomBytes(16);
   const hash = scryptSync(password, salt, 64);
-  const authSecret = randomBytes(48).toString("base64url");
+  const sessionToken = randomBytes(48).toString("base64url");
 
   console.log("\nAşağıdaki değerleri .env.local ve Vercel Environment Variables alanına ekleyin:\n");
   console.log("APP_LOGIN_USER=admin");
   console.log(
     `APP_LOGIN_PASSWORD_HASH=scrypt$${salt.toString("hex")}$${hash.toString("hex")}`
   );
-  console.log(`APP_AUTH_SECRET=${authSecret}`);
-  console.log("\nŞifrenin kendisi hiçbir yere yazılmadı.");
+  console.log(`APP_SESSION_TOKEN=${sessionToken}`);
+  console.log("\nAPP_AUTH_SECRET artık kullanılmıyor ve silinebilir.");
+  console.log("Şifrenin kendisi hiçbir yere yazılmadı.");
 }
 
 main().catch((error) => {

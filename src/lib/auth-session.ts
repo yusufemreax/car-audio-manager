@@ -1,100 +1,51 @@
 export const AUTH_COOKIE_NAME = "car_audio_session";
 export const AUTH_SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 
-interface SessionPayload {
+export interface SessionPayload {
   sub: string;
   exp: number;
 }
 
-function getAuthSecret() {
-  const secret = process.env.APP_AUTH_SECRET?.trim();
+function getConfiguredSessionToken() {
+  const token = process.env.APP_SESSION_TOKEN?.trim();
 
-  if (!secret || secret.length < 32) {
+  if (!token || token.length < 32) {
     return null;
   }
 
-  return secret;
+  return token;
 }
 
-function bytesToBase64Url(bytes: Uint8Array) {
-  let binary = "";
-
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
+function constantTimeEqual(left: string, right: string) {
+  if (left.length !== right.length) {
+    return false;
   }
 
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
+  let difference = 0;
 
-function base64UrlToBytes(value: string) {
-  const normalized = value
-    .replace(/-/g, "+")
-    .replace(/_/g, "/");
-
-  const padded = normalized.padEnd(
-    Math.ceil(normalized.length / 4) * 4,
-    "="
-  );
-
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
 
-  return bytes;
+  return difference === 0;
 }
 
-async function getHmacKey(secret: string) {
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    {
-      name: "HMAC",
-      hash: "SHA-256",
-    },
-    false,
-    ["sign", "verify"]
-  );
+export function isAuthSessionConfigured() {
+  return Boolean(getConfiguredSessionToken());
 }
 
 export async function createSessionToken(
-  username: string
+  _username: string
 ): Promise<string> {
-  const secret = getAuthSecret();
+  const token = getConfiguredSessionToken();
 
-  if (!secret) {
+  if (!token) {
     throw new Error(
-      "APP_AUTH_SECRET en az 32 karakter olacak şekilde tanımlanmalıdır."
+      "APP_SESSION_TOKEN en az 32 karakter olacak şekilde tanımlanmalıdır."
     );
   }
 
-  const payload: SessionPayload = {
-    sub: username,
-    exp:
-      Math.floor(Date.now() / 1000) +
-      AUTH_SESSION_MAX_AGE_SECONDS,
-  };
-
-  const payloadBytes = new TextEncoder().encode(
-    JSON.stringify(payload)
-  );
-  const payloadBase64 = bytesToBase64Url(payloadBytes);
-
-  const key = await getHmacKey(secret);
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(payloadBase64)
-  );
-
-  return `${payloadBase64}.${bytesToBase64Url(
-    new Uint8Array(signature)
-  )}`;
+  return token;
 }
 
 export async function verifySessionToken(
@@ -104,56 +55,23 @@ export async function verifySessionToken(
     return null;
   }
 
-  const secret = getAuthSecret();
+  const configuredToken = getConfiguredSessionToken();
 
-  if (!secret) {
+  if (!configuredToken) {
     return null;
   }
 
-  const parts = token.split(".");
-
-  if (parts.length !== 2) {
+  if (!constantTimeEqual(token, configuredToken)) {
     return null;
   }
 
-  const [payloadBase64, signatureBase64] = parts;
+  const username =
+    process.env.APP_LOGIN_USER?.trim() || "admin";
 
-  try {
-    const key = await getHmacKey(secret);
-
-    const validSignature = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      base64UrlToBytes(signatureBase64),
-      new TextEncoder().encode(payloadBase64)
-    );
-
-    if (!validSignature) {
-      return null;
-    }
-
-    const payloadText = new TextDecoder().decode(
-      base64UrlToBytes(payloadBase64)
-    );
-
-    const payload = JSON.parse(payloadText) as SessionPayload;
-
-    if (
-      !payload ||
-      typeof payload.sub !== "string" ||
-      !payload.sub.trim() ||
-      typeof payload.exp !== "number" ||
-      !Number.isFinite(payload.exp)
-    ) {
-      return null;
-    }
-
-    if (payload.exp <= Math.floor(Date.now() / 1000)) {
-      return null;
-    }
-
-    return payload;
-  } catch {
-    return null;
-  }
+  return {
+    sub: username,
+    exp:
+      Math.floor(Date.now() / 1000) +
+      AUTH_SESSION_MAX_AGE_SECONDS,
+  };
 }
