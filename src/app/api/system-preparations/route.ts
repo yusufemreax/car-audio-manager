@@ -91,12 +91,33 @@ async function refreshReadySystemsWithCurrentRate(
       request.url
     );
 
+  /*
+   * Bu route /api/exchange-rate endpoint'ine server-side
+   * istek atiyor. Browser'dan gelen HttpOnly session cookie
+   * server-side fetch'e otomatik tasinmaz.
+   *
+   * Proxy /api/exchange-rate'i de korudugu icin cookie
+   * forward edilmezse nested istek 401 doner.
+   */
+  const cookieHeader =
+    request.headers.get(
+      "cookie"
+    );
+
   const exchangeRateResponse =
     await fetch(
       exchangeRateUrl,
       {
         cache:
           "no-store",
+        ...(cookieHeader
+          ? {
+              headers: {
+                cookie:
+                  cookieHeader,
+              },
+            }
+          : {}),
       }
     );
 
@@ -181,7 +202,7 @@ async function refreshReadySystemsWithCurrentRate(
           productTotalUsd *
           exchangeRate;
 
-        /**
+        /*
          * Hazır sistem güncel kurla refresh edilirken de
          * yalnızca komisyona dahil ürünler baz alınır.
          */
@@ -389,7 +410,7 @@ export async function POST(
         body
       );
 
-    /**
+    /*
      * Builder sonucunda her item mutlaka gerçek boolean taşımalı.
      * Böylece false değeri Mongo yazımından önce kaybolamaz.
      */
