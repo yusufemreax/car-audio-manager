@@ -2549,7 +2549,7 @@ async function buildCustomerOfferDocument(
                   [
                     {
                       text:
-                        "İşçilik Tutarı",
+                        "Montaj ücreti",
 
                       margin: [
                         5,
