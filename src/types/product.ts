@@ -2,6 +2,8 @@ import type {
   ProductSupplier,
 } from "@/types/supplier";
 
+// src/types/product.ts
+
 export type ProductCategory =
   | "speaker"
   | "amplifier"
@@ -39,6 +41,10 @@ export interface Product {
   suppliers: ProductSupplier[];
   sourceUrl?: string;
   priceCheckedAt?: string;
+  /** Son günlük kontrolde ürün kaynağı HTTP 404 döndürdüyse true. */
+  sourceUnavailable?: boolean;
+  /** Ürün kaynağının erişilebilirlik durumunun son kontrol zamanı. */
+  sourceAvailabilityCheckedAt?: string;
   specifications: Record<
     string,
     ProductSpecificationValue

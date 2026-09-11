@@ -6,9 +6,6 @@ import {
 } from "react";
 
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   Check,
   Filter,
   PackageSearch,
@@ -109,19 +106,6 @@ type ColumnFilters =
     string,
     string[]
   >;
-
-type PriceSortField =
-  | "usd"
-  | "try";
-
-type PriceSortDirection =
-  | "asc"
-  | "desc";
-
-interface PriceSortState {
-  field: PriceSortField;
-  direction: PriceSortDirection;
-}
 
 interface HeaderFilterProps {
   title: string;
@@ -708,14 +692,6 @@ export function ProductSelectionDialog({
       {}
     );
 
-  const [
-    priceSort,
-    setPriceSort,
-  ] =
-    useState<PriceSortState | null>(
-      null
-    );
-
   /*
    * =======================================================
    * CATEGORY
@@ -842,6 +818,37 @@ export function ProductSelectionDialog({
         );
 
       /*
+       * USD
+       */
+      result.usd =
+        getUniqueOptions(
+          categoryProducts.map(
+            (
+              product
+            ) =>
+              formatUsd(
+                product.priceUsd
+              )
+          )
+        );
+
+      /*
+       * TRY
+       */
+      result.try =
+        getUniqueOptions(
+          categoryProducts.map(
+            (
+              product
+            ) =>
+              formatTry(
+                product.priceUsd *
+                  exchangeRate
+              )
+          )
+        );
+
+      /*
        * DYNAMIC FIELDS
        */
       tableFields.forEach(
@@ -869,6 +876,7 @@ export function ProductSelectionDialog({
     }, [
       categoryProducts,
       tableFields,
+      exchangeRate,
     ]);
 
   /*
@@ -906,50 +914,6 @@ export function ProductSelectionDialog({
           ] = values;
 
           return next;
-        }
-      );
-    };
-
-  /*
-   * =======================================================
-   * PRICE SORT
-   *
-   * Tıklama sırası:
-   * sıralamasız -> artan -> azalan -> sıralamasız
-   * =======================================================
-   */
-
-  const togglePriceSort =
-    (
-      field:
-        PriceSortField
-    ) => {
-      setPriceSort(
-        (previous) => {
-          if (
-            !previous ||
-            previous.field !==
-              field
-          ) {
-            return {
-              field,
-              direction:
-                "asc",
-            };
-          }
-
-          if (
-            previous.direction ===
-            "asc"
-          ) {
-            return {
-              field,
-              direction:
-                "desc",
-            };
-          }
-
-          return null;
         }
       );
     };
@@ -1104,6 +1068,53 @@ export function ProductSelectionDialog({
 
             /*
              * ===============================================
+             * USD
+             * ===============================================
+             */
+
+            const usdFilters =
+              columnFilters
+                .usd ??
+              [];
+
+            if (
+              usdFilters.length >
+                0 &&
+              !usdFilters.includes(
+                formatUsd(
+                  product.priceUsd
+                )
+              )
+            ) {
+              return false;
+            }
+
+            /*
+             * ===============================================
+             * TRY
+             * ===============================================
+             */
+
+            const tryFilters =
+              columnFilters
+                .try ??
+              [];
+
+            if (
+              tryFilters.length >
+                0 &&
+              !tryFilters.includes(
+                formatTry(
+                  product.priceUsd *
+                    exchangeRate
+                )
+              )
+            ) {
+              return false;
+            }
+
+            /*
+             * ===============================================
              * DYNAMIC FIELDS
              * ===============================================
              */
@@ -1150,38 +1161,6 @@ export function ProductSelectionDialog({
             first,
             second
           ) => {
-            if (
-              priceSort
-            ) {
-              const firstValue =
-                priceSort.field ===
-                "try"
-                  ? first.priceUsd *
-                    exchangeRate
-                  : first.priceUsd;
-
-              const secondValue =
-                priceSort.field ===
-                "try"
-                  ? second.priceUsd *
-                    exchangeRate
-                  : second.priceUsd;
-
-              const difference =
-                firstValue -
-                secondValue;
-
-              if (
-                difference !==
-                0
-              ) {
-                return priceSort.direction ===
-                  "asc"
-                  ? difference
-                  : -difference;
-              }
-            }
-
             const brandCompare =
               first.brand.localeCompare(
                 second.brand,
@@ -1215,7 +1194,6 @@ export function ProductSelectionDialog({
       columnFilters,
       tableFields,
       exchangeRate,
-      priceSort,
     ]);
 
   /*
@@ -1229,6 +1207,13 @@ export function ProductSelectionDialog({
       product:
         Product
     ) => {
+      if (
+        product.sourceUnavailable ===
+        true
+      ) {
+        return;
+      }
+
       onSelect(
         product
       );
@@ -1243,10 +1228,6 @@ export function ProductSelectionDialog({
 
       setColumnFilters(
         {}
-      );
-
-      setPriceSort(
-        null
       );
     };
 
@@ -1274,10 +1255,6 @@ export function ProductSelectionDialog({
 
         setColumnFilters(
           {}
-        );
-
-        setPriceSort(
-          null
         );
       }
     };
@@ -1435,7 +1412,6 @@ export function ProductSelectionDialog({
 
               <TableHeader className="sticky top-0 z-30 bg-background shadow-[0_1px_0_0_hsl(var(--border))]">
                 <TableRow className="hover:bg-background">
-                  
                   {/* CODE */}
 
                   <TableHead className="sticky left-0 z-40 min-w-32 bg-background">
@@ -1532,62 +1508,6 @@ export function ProductSelectionDialog({
                     </div>
                   </TableHead>
 
-                  {/* USD */}
-
-                  <TableHead className="min-w-32">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto flex h-8 px-2 font-medium"
-                      onClick={() =>
-                        togglePriceSort(
-                          "usd"
-                        )
-                      }
-                    >
-                      USD
-
-                      {priceSort?.field !==
-                      "usd" ? (
-                        <ArrowUpDown className="size-3.5 text-muted-foreground" />
-                      ) : priceSort.direction ===
-                        "asc" ? (
-                        <ArrowUp className="size-3.5" />
-                      ) : (
-                        <ArrowDown className="size-3.5" />
-                      )}
-                    </Button>
-                  </TableHead>
-
-                  {/* TRY */}
-
-                  <TableHead className="min-w-36">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto flex h-8 px-2 font-medium"
-                      onClick={() =>
-                        togglePriceSort(
-                          "try"
-                        )
-                      }
-                    >
-                      TL
-
-                      {priceSort?.field !==
-                      "try" ? (
-                        <ArrowUpDown className="size-3.5 text-muted-foreground" />
-                      ) : priceSort.direction ===
-                        "asc" ? (
-                        <ArrowUp className="size-3.5" />
-                      ) : (
-                        <ArrowDown className="size-3.5" />
-                      )}
-                    </Button>
-                  </TableHead>
-
                   {/* DYNAMIC FIELDS */}
 
                   {tableFields.map(
@@ -1644,7 +1564,69 @@ export function ProductSelectionDialog({
                     }
                   )}
 
-                  
+                  {/* USD */}
+
+                  <TableHead className="min-w-32">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>
+                        USD
+                      </span>
+
+                      <HeaderFilter
+                        title="USD Fiyat"
+                        options={
+                          filterOptions
+                            .usd ??
+                          []
+                        }
+                        selectedValues={
+                          columnFilters
+                            .usd ??
+                          []
+                        }
+                        onChange={(
+                          values
+                        ) =>
+                          updateColumnFilter(
+                            "usd",
+                            values
+                          )
+                        }
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* TRY */}
+
+                  <TableHead className="min-w-36">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>
+                        TL
+                      </span>
+
+                      <HeaderFilter
+                        title="TL Fiyat"
+                        options={
+                          filterOptions
+                            .try ??
+                          []
+                        }
+                        selectedValues={
+                          columnFilters
+                            .try ??
+                          []
+                        }
+                        onChange={(
+                          values
+                        ) =>
+                          updateColumnFilter(
+                            "try",
+                            values
+                          )
+                        }
+                      />
+                    </div>
+                  </TableHead>
 
                   {/* ACTION */}
 
@@ -1710,6 +1692,10 @@ export function ProductSelectionDialog({
                         product.id ===
                         selectedProductId;
 
+                      const unavailable =
+                        product.sourceUnavailable ===
+                        true;
+
                       const tryPrice =
                         product.priceUsd *
                         exchangeRate;
@@ -1720,12 +1706,13 @@ export function ProductSelectionDialog({
                             product.id
                           }
                           className={
-                            selected
-                              ? "bg-muted/60"
-                              : undefined
+                            unavailable
+                              ? "opacity-55 cursor-not-allowed"
+                              : selected
+                                ? "bg-muted/60"
+                                : undefined
                           }
                         >
-                          
                           {/* CODE */}
 
                           <TableCell
@@ -1762,28 +1749,14 @@ export function ProductSelectionDialog({
                           {/* MODEL */}
 
                           <TableCell className="h-13 whitespace-nowrap">
-                            {
-                              product.model
-                            }
-                          </TableCell>
-
-                          {/* USD */}
-
-                          <TableCell className="h-13 whitespace-nowrap text-right font-medium tabular-nums">
-                            {formatUsd(
-                              product.priceUsd
-                            )}
-                          </TableCell>
-
-                          {/* TRY */}
-
-                          <TableCell className="h-13 whitespace-nowrap text-right font-medium tabular-nums">
-                            {exchangeRate >
-                            0
-                              ? formatTry(
-                                  tryPrice
-                                )
-                              : "-"}
+                            <div>
+                              {product.model}
+                            </div>
+                            {unavailable ? (
+                              <div className="mt-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                                Satışta değil · EGB sayfası bulunamadı (404)
+                              </div>
+                            ) : null}
                           </TableCell>
 
                           {/* DYNAMIC */}
@@ -1806,7 +1779,24 @@ export function ProductSelectionDialog({
                             )
                           )}
 
-                          
+                          {/* USD */}
+
+                          <TableCell className="h-13 whitespace-nowrap text-right font-medium tabular-nums">
+                            {formatUsd(
+                              product.priceUsd
+                            )}
+                          </TableCell>
+
+                          {/* TRY */}
+
+                          <TableCell className="h-13 whitespace-nowrap text-right font-medium tabular-nums">
+                            {exchangeRate >
+                            0
+                              ? formatTry(
+                                  tryPrice
+                                )
+                              : "-"}
+                          </TableCell>
 
                           {/* ACTION */}
 
@@ -1833,13 +1823,18 @@ export function ProductSelectionDialog({
                                   ? "secondary"
                                   : "default"
                               }
+                              disabled={
+                                unavailable
+                              }
                               onClick={() =>
                                 handleSelect(
                                   product
                                 )
                               }
                             >
-                              {selected ? (
+                              {unavailable ? (
+                                "Seçilemez"
+                              ) : selected ? (
                                 <>
                                   <Check className="size-4" />
 
@@ -1879,10 +1874,6 @@ export function ProductSelectionDialog({
 
                   setColumnFilters(
                     {}
-                  );
-
-                  setPriceSort(
-                    null
                   );
 
                   onOpenChange(

@@ -456,6 +456,18 @@ export async function buildSystemPreparationData(
     );
   }
 
+  /*
+   * Ürünler merkezi ürün servisinden alınır.
+   *
+   * Bu servis her ürün için:
+   * - sourceUrl yoksa mevcut MongoDB fiyatını kullanır.
+   * - sourceUrl varsa ürünün bugün kontrol edilip edilmediğini Europe/Istanbul gününe göre değerlendirir.
+   * - Bugün kontrol edilmediyse EGB fiyatını yeniler; 404 ise ürünü satışta değil işaretler.
+   * - EGB hatasında mevcut MongoDB fiyatıyla devam eder.
+   *
+   * Böylece hem POST hem PUT akışında system preparation snapshot'ı
+   * mümkün olan en güncel ürün fiyatı ile oluşturulur.
+   */
   const products =
     productObjectIds.length >
     0
@@ -473,6 +485,29 @@ export async function buildSystemPreparationData(
         ]
       )
     );
+
+  const unavailableProduct =
+    products.find(
+      (product) =>
+        product.sourceUnavailable ===
+        true
+    );
+
+  if (unavailableProduct) {
+    const productName =
+      [
+        unavailableProduct.productCode,
+        unavailableProduct.brand,
+        unavailableProduct.model,
+      ]
+        .filter(Boolean)
+        .join(" · " );
+
+    throw new SystemPreparationBuildError(
+      `${productName || "Seçilen ürün"} EGB ürün sayfası 404 döndüğü için Sistem Hazırlamada kullanılamaz.`,
+      409
+    );
+  }
 
   const items:
     SystemPreparationItemDocument[] =
@@ -573,9 +608,6 @@ export async function buildSystemPreparationData(
                   product.imageUrl,
               }
             : {}),
-          specifications: {
-            ...(product.specifications ?? {}),
-          },
           unitPriceUsd,
           totalPriceUsd:
             unitPriceUsd *
@@ -724,9 +756,6 @@ export async function buildSystemPreparationData(
                 product.imageUrl,
             }
           : {}),
-        specifications: {
-          ...(product.specifications ?? {}),
-        },
         unitPriceUsd,
         totalPriceUsd:
           unitPriceUsd *

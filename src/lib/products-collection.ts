@@ -32,6 +32,8 @@ export interface ProductDocument {
   sourceUrl?: string;
   priceCheckedAt?: Date;
   priceRefreshAttemptedAt?: Date;
+  sourceUnavailable?: boolean;
+  sourceAvailabilityCheckedAt?: Date;
   specifications: Record<
     string,
     ProductSpecificationValue
@@ -98,6 +100,18 @@ export function serializeProduct(
       ? {
           priceCheckedAt:
             product.priceCheckedAt.toISOString(),
+        }
+      : {}),
+    ...(typeof product.sourceUnavailable === "boolean"
+      ? {
+          sourceUnavailable:
+            product.sourceUnavailable,
+        }
+      : {}),
+    ...(product.sourceAvailabilityCheckedAt instanceof Date
+      ? {
+          sourceAvailabilityCheckedAt:
+            product.sourceAvailabilityCheckedAt.toISOString(),
         }
       : {}),
     specifications:

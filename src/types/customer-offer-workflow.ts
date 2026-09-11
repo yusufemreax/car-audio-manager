@@ -63,9 +63,6 @@ export interface CustomerOfferOrderSupplierPayment {
   supplier: ProductSupplier;
   paymentMethod: SupplierPurchasePaymentMethod;
   balanceUsedUsd: number;
-  customerCardAmountTry?: number;
-  exchangeRate?: number;
-  exchangeRateDate?: string;
 }
 
 export type CustomerOfferPaymentMethod =
@@ -76,13 +73,12 @@ export type CustomerOfferPaymentMethod =
 export interface CustomerOfferCompletionPayment {
   method: CustomerOfferPaymentMethod;
   supplier?: ProductSupplier;
-  /** Kart veya önceden çekilen kart için müşteri kartından çekilen TL. */
   cardAmountTry: number;
-  /** Sadece montaj anında yeni kart çekiminde siteye yüklenecek USD. */
   cardAmountUsd: number;
-  /** Backend tekrar hesaplar; client yalnızca önizleme amaçlı gönderir. */
   cashAmountTry: number;
-  shippingFeeTry: number;
+
+  shippingFeeTry?: number;
+
   exchangeRate?: number;
   exchangeRateDate?: string;
 }
@@ -93,4 +89,6 @@ export interface CustomerOfferWorkflowRequest {
   supplierPayments?: CustomerOfferOrderSupplierPayment[];
   payment?: CustomerOfferCompletionPayment;
   reservedStockDecisions?: CustomerOfferReservedStockDecision[];
+  /** 404 ile satışta değil işaretlenen eksik ürünlerle Sipariş adımına devam onayı. */
+  confirmUnavailableOrderProducts?: boolean;
 }

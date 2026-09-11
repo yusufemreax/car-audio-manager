@@ -12,10 +12,6 @@ import {
 } from "@/types/product";
 
 import {
-  normalizeProductSuppliers,
-} from "@/types/supplier";
-
-import {
   getProductsCollection,
   serializeProduct,
 } from "@/lib/products-collection";
@@ -25,23 +21,16 @@ import {
 } from "@/lib/inventory-collection";
 
 import {
+  getProductsWithFreshPrices,
+} from "@/lib/products-service";
+
+import {
   getNextProductCode,
 } from "@/lib/product-code";
 
 import {
   isProductCategory,
 } from "@/lib/product-config";
-
-import {
-  getProductsWithFreshPrices,
-} from "@/lib/products-service";
-
-import {
-  EgbPriceScraperError,
-  fetchEgbProductPrice,
-  isEgbUrl,
-  roundCurrency,
-} from "@/lib/scraping/egb-price-scraper";
 
 /*
  * =========================================================
@@ -57,7 +46,6 @@ function cleanString(
     ? value.trim()
     : "";
 }
-
 
 /*
  * =========================================================
@@ -105,9 +93,17 @@ export async function GET(
       );
     }
 
+    /*
+     * Ürün listesi merkezi fiyat servisi üzerinden okunur. Böylece kaynak linki
+     * olan ürünler Istanbul gününde en fazla bir kez EGB'den kontrol edilir ve
+     * 404 durumu da ürün kaydına işlenir.
+     */
     const products =
       await getProductsWithFreshPrices(
-        category && isProductCategory(category)
+        category &&
+        isProductCategory(
+          category
+        )
           ? category
           : undefined
       );
@@ -187,11 +183,6 @@ export async function POST(
         body.category
       );
 
-    const sourceUrl =
-      cleanString(
-        body.sourceUrl
-      );
-
     if (
       !brand
     ) {
@@ -249,99 +240,31 @@ export async function POST(
       );
     }
 
-    if (
-      sourceUrl &&
-      !isEgbUrl(
-        sourceUrl
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const suppliers =
-      normalizeProductSuppliers(
-        body.suppliers,
-        false
+    const priceUsd =
+      Number(
+        body.priceUsd
       );
 
     if (
-      suppliers.length ===
-      0
+      !Number.isFinite(
+        priceUsd
+      ) ||
+      priceUsd <
+        0
     ) {
       return NextResponse.json(
         {
           success:
             false,
+
           message:
-            "En az bir tedarikçi seçmelisiniz.",
+            "USD fiyatı 0 veya daha büyük olmalıdır.",
         },
         {
           status:
             400,
         }
       );
-    }
-
-    let priceUsd: number;
-    let priceCheckedAt:
-      Date | undefined;
-
-    if (sourceUrl) {
-      /*
-       * Linkli üründe client'tan gelen fiyatı kullanmıyoruz.
-       * Kayıt anında EGB'den yeniden okuyup server-side doğruluyoruz.
-       */
-      const remotePrice =
-        await fetchEgbProductPrice(
-          sourceUrl
-        );
-
-      priceUsd =
-        roundCurrency(
-          remotePrice.priceUsd
-        );
-
-      priceCheckedAt =
-        new Date();
-    } else {
-      /*
-       * Link yoksa kullanıcı fiyatı manuel girer.
-       */
-      priceUsd =
-        Number(
-          body.priceUsd
-        );
-
-      if (
-        !Number.isFinite(
-          priceUsd
-        ) ||
-        priceUsd <
-          0
-      ) {
-        return NextResponse.json(
-          {
-            success:
-              false,
-
-            message:
-              "USD fiyatı 0 veya daha büyük olmalıdır.",
-          },
-          {
-            status:
-              400,
-          }
-        );
-      }
     }
 
     /*
@@ -467,18 +390,6 @@ export async function POST(
           priceUsd,
 
           category,
-
-          suppliers,
-
-          ...(sourceUrl
-            ? {
-                sourceUrl,
-                priceCheckedAt:
-                  priceCheckedAt!,
-                priceRefreshAttemptedAt:
-                  priceCheckedAt!,
-              }
-            : {}),
 
           /*
            * Alt kategori boşsa MongoDB'ye
@@ -682,23 +593,6 @@ export async function POST(
       "POST /api/products error:",
       error
     );
-
-    if (
-      error instanceof
-        EgbPriceScraperError
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            error.message,
-        },
-        {
-          status:
-            error.statusCode,
-        }
-      );
-    }
 
     if (
       error instanceof

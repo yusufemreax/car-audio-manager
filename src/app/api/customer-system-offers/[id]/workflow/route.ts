@@ -168,6 +168,8 @@ export async function POST(
           supplierSelections:
             body.supplierSelections,
           reservedStockDecisions: body.reservedStockDecisions,
+          confirmUnavailableOrderProducts:
+            body.confirmUnavailableOrderProducts,
           supplierPayments:
             body.supplierPayments,
           payment:
