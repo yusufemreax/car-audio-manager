@@ -1,0 +1,13 @@
+APPLICATION FILES AFTER INSTALL
+src/types/customer-offer-workflow.ts
+src/lib/customer-offer-stock-workflow.ts
+src/app/api/customer-system-offers/[id]/workflow/route.ts
+src/components/customers/customers-page-client.tsx
+src/components/customers/customer-offer-stock-decision-interceptor.tsx
+
+INSTALLER FILES
+scripts/apply-stock-reservation-update.mjs
+scripts/customer-offer-stock-workflow.tail.txt
+INSTALL_UPDATE.cmd
+INSTALL_UPDATE.sh
+README_TR.md

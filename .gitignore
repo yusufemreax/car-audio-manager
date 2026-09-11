@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scripts
+/.stock-reservation-update-backup/
+INSTALL_UPDATE.cmd
+INSTALL_UPDATE.sh

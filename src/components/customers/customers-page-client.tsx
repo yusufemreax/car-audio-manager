@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
+import { useCustomerOfferStockDecisionInterceptor } from "@/components/customers/customer-offer-stock-decision-interceptor";
 
 import {
   useCallback,
@@ -245,6 +246,7 @@ function getViewTitle(
 }
 
 export function CustomersPageClient() {
+  useCustomerOfferStockDecisionInterceptor();
   const [
     customers,
     setCustomers,

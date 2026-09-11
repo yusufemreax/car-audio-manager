@@ -89,6 +89,15 @@ export async function POST(request: NextRequest) {
       password,
       configuredPasswordHash
     );
+    console.log("LOGIN DEBUG", {
+      username,
+      configuredUsername,
+      usernameMatches,
+      passwordMatches,
+      hashLength: configuredPasswordHash.length,
+      hashStartsWithScrypt: configuredPasswordHash.startsWith("scrypt$"),
+      hashParts: configuredPasswordHash.split("$").length,
+    });
 
     if (!usernameMatches || !passwordMatches) {
       return invalidLoginResponse();

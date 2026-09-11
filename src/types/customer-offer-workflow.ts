@@ -25,6 +25,33 @@ export interface CustomerOfferStockRequirement {
   unitPriceUsd: number;
   missingTotalUsd: number;
   suppliers: ProductSupplier[];
+  /** Montaj bekleyen diğer tekliflerin ayırdığı toplam miktar. */
+  reservedQuantity?: number;
+  /** Fiziksel stoktan rezervasyonlar çıkarıldıktan sonra serbest kalan miktar. */
+  freeQuantity?: number;
+  /** Bu teklif için sipariş/stok kullanımı kararı gereken miktar. */
+  reservationConflictQuantity?: number;
+}
+
+export type CustomerOfferReservedStockDecisionValue =
+  | "order"
+  | "use_stock";
+
+export interface CustomerOfferReservedStockDecision {
+  productId: string;
+  decision: CustomerOfferReservedStockDecisionValue;
+}
+
+export interface CustomerOfferStockReservationConflict {
+  productId: string;
+  productCode?: string;
+  brand?: string;
+  model?: string;
+  requiredQuantity: number;
+  availableQuantity: number;
+  reservedQuantity: number;
+  freeQuantity: number;
+  conflictQuantity: number;
 }
 
 export interface CustomerOfferOrderSupplierSelection {
@@ -65,4 +92,5 @@ export interface CustomerOfferWorkflowRequest {
   supplierSelections?: CustomerOfferOrderSupplierSelection[];
   supplierPayments?: CustomerOfferOrderSupplierPayment[];
   payment?: CustomerOfferCompletionPayment;
+  reservedStockDecisions?: CustomerOfferReservedStockDecision[];
 }

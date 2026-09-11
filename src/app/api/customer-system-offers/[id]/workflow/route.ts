@@ -167,6 +167,7 @@ export async function POST(
         {
           supplierSelections:
             body.supplierSelections,
+          reservedStockDecisions: body.reservedStockDecisions,
           supplierPayments:
             body.supplierPayments,
           payment:

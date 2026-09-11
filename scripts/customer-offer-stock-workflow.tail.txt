@@ -1,0 +1,876 @@
+/*
+ * =======================================================
+ * INSTALLATION RESERVATION / DELAYED STOCK CONSUMPTION
+ * =======================================================
+ *
+ * Yeni akışta installation_pending fiziksel stok çıkışı değildir; bir
+ * rezervasyondur. Gerçek stok çıkışı complete-sale (montaj tamamlandı) anında
+ * yapılır. Eski kayıtlarda stockDeductedAt bulunan installation_pending
+ * teklifler zaten stoktan düşüldüğü için rezervasyon hesabına dahil edilmez.
+ */
+function getReservedStockDecisionMap(
+  decisions: CustomerOfferReservedStockDecision[] | undefined
+) {
+  const result = new Map<string, CustomerOfferReservedStockDecision["decision"]>();
+
+  for (const decision of decisions ?? []) {
+    const productId = cleanString(decision?.productId);
+    if (!productId) {
+      continue;
+    }
+
+    if (decision.decision !== "order" && decision.decision !== "use_stock") {
+      continue;
+    }
+
+    result.set(productId, decision.decision);
+  }
+
+  return result;
+}
+
+async function getInstallationReservationQuantities(
+  offersCollection: Collection<CustomerSystemOfferDocument>,
+  currentOfferId: ObjectId
+) {
+  const reservedByProductId = new Map<string, number>();
+
+  const pendingOffers = await offersCollection
+    .find(
+      {
+        _id: { $ne: currentOfferId },
+        status: "installation_pending",
+        // MongoDB Driver tipinde stockDeductedAt Date | undefined.
+        // $not + $type ile hem alani olmayan/null kayitlari yeni rezervasyon
+        // akimina dahil ediyor, hem de Date bulunan eski (stoktan dusulmus)
+        // kayitlari disarida birakiyoruz.
+        stockDeductedAt: { $not: { $type: "date" } },
+      },
+      {
+        projection: {
+          systemSnapshot: 1,
+        },
+      }
+    )
+    .toArray();
+
+  for (const pendingOffer of pendingOffers) {
+    try {
+      const reservedProducts = getRequiredProducts(pendingOffer);
+
+      for (const reservedProduct of reservedProducts) {
+        reservedByProductId.set(
+          reservedProduct.productId,
+          (reservedByProductId.get(reservedProduct.productId) ?? 0) +
+            reservedProduct.requiredQuantity
+        );
+      }
+    } catch (error) {
+      // Eski/bozuk bir snapshot yeni satış akışını tamamen durdurmasın.
+      console.error(
+        `Montaj rezervasyonu okunamadı. OfferId=${pendingOffer._id.toString()}`,
+        error
+      );
+    }
+  }
+
+  return reservedByProductId;
+}
+
+async function resolveStartSaleRequirements(
+  inventoryCollection: Collection<InventoryDocument>,
+  offersCollection: Collection<CustomerSystemOfferDocument>,
+  offer: WithId<CustomerSystemOfferDocument>
+): Promise<RequirementResolution> {
+  const resolution = await resolveRequirements(inventoryCollection, offer);
+  const reservedByProductId = await getInstallationReservationQuantities(
+    offersCollection,
+    offer._id
+  );
+
+  const requirements = resolution.requirements.map((requirement) => {
+    const reservedQuantity = Math.max(
+      0,
+      Math.trunc(reservedByProductId.get(requirement.productId) ?? 0)
+    );
+    const freeQuantity = Math.max(
+      requirement.availableQuantity - reservedQuantity,
+      0
+    );
+
+    // Fiziksel stokta mevcut olup diğer montajlar nedeniyle serbest olmayan
+    // miktar. Fiziksel eksik (missingQuantity) ile çakışmaz; ayrı hesaplanır.
+    const reservationConflictQuantity = Math.max(
+      Math.min(requirement.requiredQuantity, requirement.availableQuantity) -
+        freeQuantity,
+      0
+    );
+
+    return {
+      ...requirement,
+      reservedQuantity,
+      freeQuantity,
+      reservationConflictQuantity,
+    };
+  });
+
+  return {
+    ...resolution,
+    requirements,
+  };
+}
+
+function getReservationConflicts(
+  requirements: CustomerOfferStockRequirement[]
+): CustomerOfferStockReservationConflict[] {
+  return requirements
+    .filter((requirement) => (requirement.reservationConflictQuantity ?? 0) > 0)
+    .map((requirement) => ({
+      productId: requirement.productId,
+      ...(requirement.productCode
+        ? { productCode: requirement.productCode }
+        : {}),
+      ...(requirement.brand ? { brand: requirement.brand } : {}),
+      ...(requirement.model ? { model: requirement.model } : {}),
+      requiredQuantity: requirement.requiredQuantity,
+      availableQuantity: requirement.availableQuantity,
+      reservedQuantity: requirement.reservedQuantity ?? 0,
+      freeQuantity: requirement.freeQuantity ?? requirement.availableQuantity,
+      conflictQuantity: requirement.reservationConflictQuantity ?? 0,
+    }));
+}
+
+function applyReservedStockDecisions(
+  requirements: CustomerOfferStockRequirement[],
+  decisions: CustomerOfferReservedStockDecision[] | undefined
+) {
+  const decisionMap = getReservedStockDecisionMap(decisions);
+
+  return requirements.map((requirement) => {
+    const conflictQuantity = Math.max(
+      0,
+      requirement.reservationConflictQuantity ?? 0
+    );
+    const decision = decisionMap.get(requirement.productId);
+    const additionalOrderQuantity =
+      conflictQuantity > 0 && decision === "order" ? conflictQuantity : 0;
+    const missingQuantity =
+      requirement.missingQuantity + additionalOrderQuantity;
+
+    return {
+      ...requirement,
+      missingQuantity,
+      missingTotalUsd: safeMoney(requirement.unitPriceUsd * missingQuantity),
+    };
+  });
+}
+
+async function moveToInstallationPendingWithoutStockDeduction(
+  offersCollection: Collection<CustomerSystemOfferDocument>,
+  offer: WithId<CustomerSystemOfferDocument>,
+  token: string,
+  requirements: CustomerOfferStockRequirement[],
+  now: Date
+) {
+  const updateResult = await offersCollection.updateOne(
+    {
+      _id: offer._id,
+      stockProcessingToken: token,
+    },
+    {
+      $set: {
+        status: "installation_pending",
+        stockRequirements: requirements,
+        installationPendingAt: offer.installationPendingAt ?? now,
+        updatedAt: now,
+      },
+      $unset: {
+        stockProcessingToken: "",
+        stockProcessingAt: "",
+        stockDeductedAt: "",
+      },
+    }
+  );
+
+  if (updateResult.modifiedCount !== 1) {
+    throw new CustomerOfferWorkflowError(
+      "Teklif Montaj Bekliyor durumuna geçirilemedi.",
+      500
+    );
+  }
+
+  const updatedOffer = await offersCollection.findOne({ _id: offer._id });
+  if (!updatedOffer) {
+    throw new CustomerOfferWorkflowError(
+      "Montaj bekleyen teklif tekrar okunamadı.",
+      500
+    );
+  }
+
+  return updatedOffer;
+}
+
+function mergeStoredOrderRequirements(
+  currentRequirements: CustomerOfferStockRequirement[],
+  storedRequirements: CustomerOfferStockRequirement[] | undefined
+) {
+  if (!Array.isArray(storedRequirements) || storedRequirements.length === 0) {
+    return currentRequirements;
+  }
+
+  const storedByProductId = new Map(
+    storedRequirements.map((requirement) => [requirement.productId, requirement])
+  );
+
+  return currentRequirements.map((current) => {
+    const stored = storedByProductId.get(current.productId);
+    if (!stored) {
+      return current;
+    }
+
+    const missingQuantity = Math.max(
+      0,
+      Math.trunc(Number(stored.missingQuantity) || 0)
+    );
+
+    return {
+      ...current,
+      missingQuantity,
+      missingTotalUsd: safeMoney(current.unitPriceUsd * missingQuantity),
+      ...(typeof stored.reservedQuantity === "number"
+        ? { reservedQuantity: stored.reservedQuantity }
+        : {}),
+      ...(typeof stored.freeQuantity === "number"
+        ? { freeQuantity: stored.freeQuantity }
+        : {}),
+      ...(typeof stored.reservationConflictQuantity === "number"
+        ? {
+            reservationConflictQuantity:
+              stored.reservationConflictQuantity,
+          }
+        : {}),
+    };
+  });
+}
+
+function buildStoredOrderResolution(
+  resolution: RequirementResolution,
+  offer: WithId<CustomerSystemOfferDocument>
+): RequirementResolution {
+  return {
+    ...resolution,
+    requirements: mergeStoredOrderRequirements(
+      resolution.requirements,
+      offer.stockRequirements
+    ),
+  };
+}
+
+/**
+ * Mevcut sipariş/tedarikçi/ödeme altyapısını aynen kullanır; mevcut fonksiyonun
+ * yaptığı stok tüketimini request sonunda geri alır. Böylece sadece sipariş
+ * edilen ürünlerin stok girişi kalır, gerçek stok çıkışı montaj tamamlanana
+ * ertelenir.
+ */
+async function completeOrderAndKeepProductsInInventory(
+  db: Db,
+  inventoryCollection: Collection<InventoryDocument>,
+  offersCollection: Collection<CustomerSystemOfferDocument>,
+  offer: WithId<CustomerSystemOfferDocument>,
+  token: string,
+  resolution: RequirementResolution,
+  supplierSelections: CustomerOfferOrderSupplierSelection[] | undefined,
+  supplierPayments: CustomerOfferOrderSupplierPayment[] | undefined,
+  now: Date
+) {
+  const quantityBeforeByProductId = new Map<string, number>();
+
+  for (const requirement of resolution.requirements) {
+    const inventory = resolution.inventoryByProductId.get(requirement.productId);
+    quantityBeforeByProductId.set(
+      requirement.productId,
+      Math.max(0, Number(inventory?.quantity ?? 0) || 0)
+    );
+  }
+
+  await completeOrderAndConsumeStock(
+    db,
+    inventoryCollection,
+    offersCollection,
+    offer,
+    token,
+    resolution,
+    supplierSelections,
+    supplierPayments,
+    now
+  );
+
+  /*
+   * Mevcut fonksiyon tedarikçi siparişi, ödeme kayıtları ve stok girişini doğru
+   * şekilde oluşturuyor; ancak aynı request içinde teklif ürünlerini de stoktan
+   * çıkarıyor. Aşağıdaki düzeltme yalnızca o erken tüketimi geri alır.
+   *
+   * hedef stok = işlem öncesi fiziksel stok + gerçekten sipariş edilen miktar
+   */
+  const corrections: Array<{ inventoryId: ObjectId; quantity: number }> = [];
+
+  try {
+    for (const requirement of resolution.requirements) {
+      const previousQuantity =
+        quantityBeforeByProductId.get(requirement.productId) ?? 0;
+      const legacyFinalQuantity = Math.max(
+        previousQuantity - requirement.requiredQuantity,
+        0
+      );
+      const targetQuantity = previousQuantity + requirement.missingQuantity;
+      const correctionQuantity = targetQuantity - legacyFinalQuantity;
+
+      if (correctionQuantity === 0) {
+        continue;
+      }
+
+      const currentInventory = await ensureInventoryDocument(
+        inventoryCollection,
+        requirement.productId,
+        now
+      );
+
+      const correctionResult = await inventoryCollection.updateOne(
+        { _id: currentInventory._id },
+        {
+          $inc: { quantity: correctionQuantity },
+          $set: { updatedAt: now },
+        }
+      );
+
+      if (correctionResult.modifiedCount !== 1) {
+        throw new CustomerOfferWorkflowError(
+          `${requirement.brand ?? ""} ${requirement.model ?? ""} sipariş stok girişi korunamadı.`.trim(),
+          500
+        );
+      }
+
+      corrections.push({
+        inventoryId: currentInventory._id,
+        quantity: correctionQuantity,
+      });
+    }
+
+    const keptRequirements = resolution.requirements.map((requirement) => {
+      const previousQuantity =
+        quantityBeforeByProductId.get(requirement.productId) ?? 0;
+      const availableQuantity = previousQuantity + requirement.missingQuantity;
+
+      return {
+        ...requirement,
+        availableQuantity,
+        missingQuantity: 0,
+        missingTotalUsd: 0,
+      };
+    });
+
+    const offerUpdate = await offersCollection.updateOne(
+      { _id: offer._id },
+      {
+        $set: {
+          status: "installation_pending",
+          stockRequirements: keptRequirements,
+          installationPendingAt: now,
+          updatedAt: now,
+        },
+        $unset: {
+          stockDeductedAt: "",
+          stockProcessingToken: "",
+          stockProcessingAt: "",
+        },
+      }
+    );
+
+    if (offerUpdate.modifiedCount !== 1) {
+      throw new CustomerOfferWorkflowError(
+        "Sipariş tamamlandı ancak teklif Montaj Bekliyor durumuna güvenli şekilde alınamadı.",
+        500
+      );
+    }
+
+    // Eski fonksiyonun yazdığı erken stok çıkış hareketini temizlemek yalnızca
+    // log düzeltmesidir. Ana stok işlemini bunun yüzünden geri çevirmiyoruz.
+    try {
+      await db
+        .collection<StockMovementDocument>(STOCK_MOVEMENTS_COLLECTION)
+        .deleteMany({
+          offerId: offer._id.toString(),
+          type: "out",
+          createdAt: now,
+        });
+    } catch (movementError) {
+      console.error(
+        `Erken stok çıkış hareketi temizlenemedi. OfferId=${offer._id.toString()}`,
+        movementError
+      );
+    }
+  } catch (error) {
+    // Düzeltme aşaması tamamlanamadıysa mevcut completeOrderAndConsumeStock
+    // fonksiyonunun oluşturduğu tutarlı eski duruma geri dön.
+    for (const correction of corrections.reverse()) {
+      await inventoryCollection.updateOne(
+        { _id: correction.inventoryId },
+        {
+          $inc: { quantity: -correction.quantity },
+          $set: { updatedAt: new Date() },
+        }
+      );
+    }
+
+    throw error;
+  }
+}
+
+/** Gerçek stok çıkışı yalnızca montaj tamamlanırken çağrılır. */
+async function deductInstallationStock(
+  db: Db,
+  inventoryCollection: Collection<InventoryDocument>,
+  offersCollection: Collection<CustomerSystemOfferDocument>,
+  offer: WithId<CustomerSystemOfferDocument>,
+  token: string,
+  resolution: RequirementResolution,
+  now: Date
+) {
+  const deducted: Array<{
+    inventoryId: ObjectId;
+    quantity: number;
+    previousQuantity: number;
+    productId: string;
+  }> = [];
+
+  try {
+    for (const requirement of resolution.requirements) {
+      const inventory = resolution.inventoryByProductId.get(requirement.productId);
+
+      if (!inventory) {
+        throw new CustomerOfferWorkflowError(
+          `${requirement.brand ?? ""} ${requirement.model ?? ""} ürünü stokta bulunamadı. Montaj tamamlanamaz.`.trim(),
+          409,
+          { stockRequirements: resolution.requirements }
+        );
+      }
+
+      const previousQuantity = Math.max(
+        0,
+        Number(inventory.quantity) || 0
+      );
+
+      const updateResult = await inventoryCollection.updateOne(
+        {
+          _id: inventory._id,
+          quantity: { $gte: requirement.requiredQuantity },
+        },
+        {
+          $inc: { quantity: -requirement.requiredQuantity },
+          $set: { updatedAt: now },
+        }
+      );
+
+      if (updateResult.modifiedCount !== 1) {
+        throw new CustomerOfferWorkflowError(
+          `${requirement.brand ?? ""} ${requirement.model ?? ""} ürünü için montaj anında yeterli stok kalmadı.`.trim(),
+          409,
+          { stockRequirements: resolution.requirements }
+        );
+      }
+
+      deducted.push({
+        inventoryId: inventory._id,
+        quantity: requirement.requiredQuantity,
+        previousQuantity,
+        productId: requirement.productId,
+      });
+    }
+
+    const offerUpdate = await offersCollection.updateOne(
+      {
+        _id: offer._id,
+        stockProcessingToken: token,
+      },
+      {
+        $set: {
+          stockRequirements: resolution.requirements,
+          stockDeductedAt: now,
+          updatedAt: now,
+        },
+        $unset: {
+          stockProcessingToken: "",
+          stockProcessingAt: "",
+        },
+      }
+    );
+
+    if (offerUpdate.modifiedCount !== 1) {
+      throw new CustomerOfferWorkflowError(
+        "Montaj stok çıkışı teklif üzerine işlenemedi.",
+        500
+      );
+    }
+
+    const offerId = offer._id.toString();
+    await writeStockMovements(
+      db,
+      deducted.map((item) => ({
+        productId: item.productId,
+        type: "out",
+        quantity: item.quantity,
+        previousQuantity: item.previousQuantity,
+        newQuantity: item.previousQuantity - item.quantity,
+        note: `Montaj tamamlandı - müşteri teklifi stok çıkışı: ${offerId}`,
+        offerId,
+        createdAt: now,
+      }))
+    );
+  } catch (error) {
+    for (const item of deducted.reverse()) {
+      await inventoryCollection.updateOne(
+        { _id: item.inventoryId },
+        {
+          $inc: { quantity: item.quantity },
+          $set: { updatedAt: new Date() },
+        }
+      );
+    }
+
+    throw error;
+  }
+}
+
+export async function getCustomerOfferWorkflowDetail(
+  id: string
+): Promise<CustomerOfferWorkflowResult> {
+  const offerId = getOfferObjectId(id);
+  const { offersCollection, inventoryCollection } = await getCollections();
+
+  const offer = await offersCollection.findOne({ _id: offerId });
+  if (!offer) {
+    throw new CustomerOfferWorkflowError("Teklif bulunamadı.", 404);
+  }
+
+  const resolution = await resolveRequirements(inventoryCollection, offer);
+  const requirements =
+    offer.status === "order_pending"
+      ? mergeStoredOrderRequirements(
+          resolution.requirements,
+          offer.stockRequirements
+        )
+      : resolution.requirements;
+
+  return {
+    offer: serializeOffer(offer),
+    stockRequirements: requirements,
+    message: "Teklif detayı alındı.",
+  };
+}
+
+export async function runCustomerOfferWorkflow(
+  id: string,
+  action: CustomerOfferWorkflowAction,
+  options: CustomerOfferWorkflowOptions = {}
+): Promise<CustomerOfferWorkflowResult> {
+  const offerId = getOfferObjectId(id);
+  const { db, offersCollection, inventoryCollection } = await getCollections();
+  const now = new Date();
+
+  /*
+   * complete-sale artık iki aşamalıdır:
+   * 1) Montaj tamamlandığı anda gerçek stok çıkışı.
+   * 2) Mevcut ödeme/satış tamamlama işlemi.
+   *
+   * Stok çıkışı başarılı, ödeme tarafı başarısız olursa stockDeductedAt kalır;
+   * tekrar denemede stok ikinci kez düşülmez ve yalnızca ödeme devam eder.
+   */
+  if (action === "complete-sale") {
+    const currentOffer = await offersCollection.findOne({ _id: offerId });
+    if (!currentOffer) {
+      throw new CustomerOfferWorkflowError("Teklif bulunamadı.", 404);
+    }
+
+    if (isFinalSoldOffer(currentOffer)) {
+      return {
+        offer: serializeOffer(currentOffer),
+        stockRequirements: currentOffer.stockRequirements ?? [],
+        message: "Teklif zaten Satıldı durumunda.",
+      };
+    }
+
+    if (currentOffer.status !== "installation_pending") {
+      throw new CustomerOfferWorkflowError(
+        "Yalnızca Montaj Bekliyor durumundaki teklif satış olarak tamamlanabilir.",
+        409
+      );
+    }
+
+    if (!currentOffer.stockDeductedAt) {
+      const stockToken = randomUUID();
+      const stockClaimed = await claimStockOffer(
+        offersCollection,
+        offerId,
+        ["installation_pending"],
+        stockToken,
+        now
+      );
+
+      if (!stockClaimed.stockDeductedAt) {
+        try {
+          const stockResolution = await resolveRequirements(
+            inventoryCollection,
+            stockClaimed
+          );
+
+          if (hasShortage(stockResolution.requirements)) {
+            throw new CustomerOfferWorkflowError(
+              "Montaj tamamlanamadı. Teklif ürünlerinden en az biri için fiziksel stok yetersiz.",
+              409,
+              {
+                stockRequirements: stockResolution.requirements,
+                offer: serializeOffer(stockClaimed),
+              }
+            );
+          }
+
+          await deductInstallationStock(
+            db,
+            inventoryCollection,
+            offersCollection,
+            stockClaimed,
+            stockToken,
+            stockResolution,
+            now
+          );
+        } catch (error) {
+          await releaseStockProcessingToken(
+            offersCollection,
+            offerId,
+            stockToken
+          );
+
+          if (error instanceof CustomerOfferWorkflowError) {
+            throw error;
+          }
+
+          throw new CustomerOfferWorkflowError(
+            error instanceof Error
+              ? error.message
+              : "Montaj stok çıkışı tamamlanamadı.",
+            500
+          );
+        }
+      }
+    }
+
+    const paymentToken = randomUUID();
+    const claimed = await claimPaymentOffer(
+      offersCollection,
+      offerId,
+      paymentToken,
+      now
+    );
+
+    if (isFinalSoldOffer(claimed)) {
+      return {
+        offer: serializeOffer(claimed),
+        stockRequirements: claimed.stockRequirements ?? [],
+        message: "Teklif zaten Satıldı durumunda.",
+      };
+    }
+
+    try {
+      await completeSale(
+        offersCollection,
+        claimed,
+        paymentToken,
+        options.payment,
+        now
+      );
+
+      const soldOffer = await offersCollection.findOne({ _id: claimed._id });
+      if (!soldOffer) {
+        throw new CustomerOfferWorkflowError(
+          "Satılan teklif tekrar okunamadı.",
+          500
+        );
+      }
+
+      return {
+        offer: serializeOffer(soldOffer),
+        stockRequirements: soldOffer.stockRequirements ?? [],
+        message: "Montaj tamamlandı, ürünler stoktan düşüldü ve satış tamamlandı.",
+      };
+    } catch (error) {
+      await releasePaymentProcessingToken(
+        offersCollection,
+        offerId,
+        paymentToken
+      );
+
+      if (error instanceof CustomerOfferWorkflowError) {
+        throw error;
+      }
+
+      throw new CustomerOfferWorkflowError(
+        error instanceof Error
+          ? error.message
+          : "Teklif ödeme işlemi tamamlanamadı.",
+        500
+      );
+    }
+  }
+
+  if (action !== "start-sale" && action !== "order-completed") {
+    throw new CustomerOfferWorkflowError("Geçersiz teklif workflow işlemi.", 400);
+  }
+
+  const allowedStatuses =
+    action === "start-sale" ? ["offered", "sold"] : ["order_pending"];
+
+  const token = randomUUID();
+  const claimed = await claimStockOffer(
+    offersCollection,
+    offerId,
+    allowedStatuses,
+    token,
+    now
+  );
+
+  if (claimed.stockDeductedAt) {
+    return {
+      offer: serializeOffer(claimed),
+      stockRequirements: claimed.stockRequirements ?? [],
+      message: "Stok işlemi daha önce tamamlanmış.",
+    };
+  }
+
+  try {
+    if (action === "start-sale") {
+      const reservationResolution = await resolveStartSaleRequirements(
+        inventoryCollection,
+        offersCollection,
+        claimed
+      );
+      const reservationConflicts = getReservationConflicts(
+        reservationResolution.requirements
+      );
+      const decisionMap = getReservedStockDecisionMap(
+        options.reservedStockDecisions
+      );
+      const unresolvedConflicts = reservationConflicts.filter(
+        (conflict) => !decisionMap.has(conflict.productId)
+      );
+
+      if (unresolvedConflicts.length > 0) {
+        await releaseStockProcessingToken(
+          offersCollection,
+          offerId,
+          token
+        );
+
+        return {
+          offer: {
+            ...serializeOffer(claimed),
+            stockDecisionRequired: true,
+            reservationConflicts,
+          },
+          stockRequirements: reservationResolution.requirements,
+          message:
+            "Bazı ürünler stokta görünüyor ancak montaj bekleyen teklifler için ayrılmış. Sipariş veya mevcut stok kullanım tercihi gerekiyor.",
+        };
+      }
+
+      const decidedRequirements = applyReservedStockDecisions(
+        reservationResolution.requirements,
+        options.reservedStockDecisions
+      );
+
+      if (hasShortage(decidedRequirements)) {
+        const orderOffer = await moveToOrderPending(
+          offersCollection,
+          claimed,
+          token,
+          decidedRequirements,
+          now
+        );
+
+        return {
+          offer: serializeOffer(orderOffer),
+          stockRequirements: decidedRequirements,
+          message:
+            "Sipariş gerektiren ürün bulundu. Teklif Sipariş adımına geçirildi.",
+        };
+      }
+
+      const installationOffer =
+        await moveToInstallationPendingWithoutStockDeduction(
+          offersCollection,
+          claimed,
+          token,
+          decidedRequirements,
+          now
+        );
+
+      return {
+        offer: serializeOffer(installationOffer),
+        stockRequirements: decidedRequirements,
+        message:
+          "Ürünler montaj için ayrıldı. Fiziksel stok, montaj tamamlanana kadar düşülmeyecek.",
+      };
+    }
+
+    const currentResolution = await resolveRequirements(
+      inventoryCollection,
+      claimed
+    );
+    const orderResolution = buildStoredOrderResolution(
+      currentResolution,
+      claimed
+    );
+
+    await completeOrderAndKeepProductsInInventory(
+      db,
+      inventoryCollection,
+      offersCollection,
+      claimed,
+      token,
+      orderResolution,
+      options.supplierSelections,
+      options.supplierPayments,
+      now
+    );
+
+    const installationOffer = await offersCollection.findOne({
+      _id: claimed._id,
+    });
+    if (!installationOffer) {
+      throw new CustomerOfferWorkflowError(
+        "Montaj bekleyen teklif tekrar okunamadı.",
+        500
+      );
+    }
+
+    return {
+      offer: serializeOffer(installationOffer),
+      stockRequirements:
+        installationOffer.stockRequirements ?? orderResolution.requirements,
+      message:
+        "Sipariş tamamlandı. Sipariş edilen ürünler stoğa eklendi; stoktan çıkış yapılmadan teklif Montaj Bekliyor adımına geçirildi.",
+    };
+  } catch (error) {
+    await releaseStockProcessingToken(offersCollection, offerId, token);
+
+    if (error instanceof CustomerOfferWorkflowError) {
+      throw error;
+    }
+
+    throw new CustomerOfferWorkflowError(
+      error instanceof Error
+        ? error.message
+        : "Teklif stok işlemi tamamlanamadı.",
+      500
+    );
+  }
+}
