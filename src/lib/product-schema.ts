@@ -621,6 +621,30 @@ export const productInputSchema = z
       });
     }
 
+    const coreCount =
+      String(
+        product.specifications[
+          "coreCount"
+        ] ?? ""
+      ).trim();
+
+    if (
+      coreCount !== "4" &&
+      coreCount !== "8"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+
+        path: [
+          "specifications",
+          "coreCount",
+        ],
+
+        message:
+          "Geçerli bir çekirdek sayısı seçilmelidir.",
+      });
+    }
+
     const booleanFields = [
       {
         key:

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import pdfMake from "pdfmake/build/pdfmake";
@@ -1445,6 +1446,18 @@ async function buildCustomerOfferDocument(
                     specifications[
                       "hasDsp"
                     ]
+                  )
+                ),
+            });
+
+            features.push({
+              label:
+                "ÇEKİRDEK SAYISI",
+              value:
+                getFeatureValueCell(
+                  getSpecificationText(
+                    specifications,
+                    "coreCount"
                   )
                 ),
             });
