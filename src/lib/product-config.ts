@@ -572,6 +572,10 @@ export const productCategoryDefinitions:
             value: "front-rear-interior",
             label: "Ön - Arka - İç",
           },
+          {
+            value: "six-channel",
+            label: "6 Kanal",
+          },
         ],
       },
       {
@@ -633,6 +637,40 @@ export const productCategoryDefinitions:
           { value: "1080p", label: "1080p HD" },
           { value: "2k", label: "2K" },
           { value: "4k", label: "4K" },
+        ],
+      },
+      {
+        key: "sixChannelCameraQuality",
+        label: "Kamera Kalitesi",
+        source: "specifications",
+        inputType: "select",
+        required: true,
+        visibleWhen: {
+          key: "cameraSetup",
+          value: "six-channel",
+        },
+        options: [
+          { value: "720p", label: "720p" },
+          { value: "1080p", label: "1080p HD" },
+          { value: "2k", label: "2K" },
+          { value: "4k", label: "4K" },
+        ],
+      },
+      {
+        key: "monitorScreenSize",
+        label: "Monitör Ekran Boyutu",
+        source: "specifications",
+        inputType: "select",
+        required: true,
+        unit: '"',
+        visibleWhen: {
+          key: "cameraSetup",
+          value: "six-channel",
+        },
+        options: [
+          { value: "7", label: '7"' },
+          { value: "9", label: '9"' },
+          { value: "10.1", label: '10.1"' },
         ],
       },
       {

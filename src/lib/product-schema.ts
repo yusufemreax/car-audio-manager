@@ -12,6 +12,7 @@ export const productCategorySchema =
     "installation-equipment",
     "multimedia",
     "multimedia-frame",
+    "vehicle-camera",
   ]);
 
   const multimediaFrameSizes = [
@@ -78,6 +79,43 @@ const enclosureSizes = [
   "20x4",
   "16x4-2x10",
   "20x4-2x10",
+] as const;
+
+const vehicleCameraSetups = [
+  "front",
+  "front-rear",
+  "front-rear-interior",
+  "six-channel",
+] as const;
+
+const vehicleCameraQualities = [
+  "480p",
+  "720p",
+  "1080p",
+  "2k",
+  "4k",
+] as const;
+
+const sixChannelCameraQualities = [
+  "720p",
+  "1080p",
+  "2k",
+  "4k",
+] as const;
+
+const sixChannelMonitorScreenSizes = [
+  "7",
+  "9",
+  "10.1",
+] as const;
+
+const vehicleCameraSdCardOptions = [
+  "16",
+  "32",
+  "64",
+  "128",
+  "256",
+  "512",
 ] as const;
 
 export const productInputSchema = z
@@ -689,6 +727,198 @@ export const productInputSchema = z
       }
     }
     }
+    if (product.category === "vehicle-camera") {
+      const cameraSetup =
+        product.specifications[
+          "cameraSetup"
+        ];
+
+      if (
+        typeof cameraSetup !== "string" ||
+        !vehicleCameraSetups.includes(
+          cameraSetup as
+            (typeof vehicleCameraSetups)[number]
+        )
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [
+            "specifications",
+            "cameraSetup",
+          ],
+          message:
+            "Geçerli bir kamera tipi seçilmelidir.",
+        });
+      }
+
+      const validateCameraQuality = (
+        key: string,
+        label: string
+      ) => {
+        const value =
+          product.specifications[
+            key
+          ];
+
+        if (
+          typeof value !== "string" ||
+          !vehicleCameraQualities.includes(
+            value as
+              (typeof vehicleCameraQualities)[number]
+          )
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: [
+              "specifications",
+              key,
+            ],
+            message:
+              `${label} için geçerli bir kalite seçilmelidir.`,
+          });
+        }
+      };
+
+      if (
+        cameraSetup === "front" ||
+        cameraSetup === "front-rear" ||
+        cameraSetup === "front-rear-interior"
+      ) {
+        validateCameraQuality(
+          "frontCameraQuality",
+          "Ön kamera"
+        );
+      }
+
+      if (
+        cameraSetup === "front-rear" ||
+        cameraSetup === "front-rear-interior"
+      ) {
+        validateCameraQuality(
+          "rearCameraQuality",
+          "Arka kamera"
+        );
+      }
+
+      if (
+        cameraSetup === "front-rear-interior"
+      ) {
+        validateCameraQuality(
+          "interiorCameraQuality",
+          "İç kamera"
+        );
+      }
+
+      if (
+        cameraSetup === "six-channel"
+      ) {
+        const cameraQuality =
+          product.specifications[
+            "sixChannelCameraQuality"
+          ];
+
+        if (
+          typeof cameraQuality !== "string" ||
+          !sixChannelCameraQualities.includes(
+            cameraQuality as
+              (typeof sixChannelCameraQualities)[number]
+          )
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: [
+              "specifications",
+              "sixChannelCameraQuality",
+            ],
+            message:
+              "6 kanal kamera sistemi için geçerli bir kamera kalitesi seçilmelidir.",
+          });
+        }
+
+        const monitorScreenSize =
+          product.specifications[
+            "monitorScreenSize"
+          ];
+
+        if (
+          typeof monitorScreenSize !== "string" ||
+          !sixChannelMonitorScreenSizes.includes(
+            monitorScreenSize as
+              (typeof sixChannelMonitorScreenSizes)[number]
+          )
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: [
+              "specifications",
+              "monitorScreenSize",
+            ],
+            message:
+              "6 kanal kamera sistemi için geçerli bir monitör ekran boyutu seçilmelidir.",
+          });
+        }
+      }
+
+      const booleanFields = [
+        {
+          key: "hasAdas",
+          label: "ADAS desteği",
+        },
+        {
+          key: "hasParkingMode",
+          label: "Park modu",
+        },
+        {
+          key: "hasShockSensor",
+          label: "Sallantı sensörü",
+        },
+      ];
+
+      for (const field of booleanFields) {
+        const value =
+          product.specifications[
+            field.key
+          ];
+
+        if (
+          typeof value !== "boolean"
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: [
+              "specifications",
+              field.key,
+            ],
+            message:
+              `${field.label} bilgisi belirtilmelidir.`,
+          });
+        }
+      }
+
+      const sdCardSupport =
+        product.specifications[
+          "sdCardSupport"
+        ];
+
+      if (
+        typeof sdCardSupport !== "string" ||
+        !vehicleCameraSdCardOptions.includes(
+          sdCardSupport as
+            (typeof vehicleCameraSdCardOptions)[number]
+        )
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [
+            "specifications",
+            "sdCardSupport",
+          ],
+          message:
+            "Geçerli bir SD kart desteği seçilmelidir.",
+        });
+      }
+    }
+
     if (  product.category ===  "multimedia-frame") {
       const size =
       product.specifications[

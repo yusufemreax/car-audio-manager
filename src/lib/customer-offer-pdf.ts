@@ -428,6 +428,8 @@ function getCameraSetupText(
       return "Ön - Arka";
     case "front-rear-interior":
       return "Ön - Arka - İç";
+    case "six-channel":
+      return "6 Kanal";
     default:
       return cleanString(value) || "-";
   }
@@ -847,8 +849,13 @@ async function getItemProductData(
       (
         !snapshotImageUrl ||
         (
-          isMultimediaItem(
-            item
+          (
+            isMultimediaItem(
+              item
+            ) ||
+            isVehicleCameraItem(
+              item
+            )
           ) &&
           Object.keys(
             snapshotSpecifications
@@ -1621,6 +1628,10 @@ async function buildCustomerOfferDocument(
               "tr-TR"
             );
 
+          const isSixChannel =
+            cameraSetup ===
+              "six-channel";
+
           const features: Array<{
             label: string;
             value: Content;
@@ -1637,7 +1648,53 @@ async function buildCustomerOfferDocument(
                   )
                 ),
             },
-            {
+          ];
+
+          if (isSixChannel) {
+            features.push(
+              {
+                label:
+                  "KAMERA ADEDİ",
+                value:
+                  getFeatureValueCell(
+                    "6"
+                  ),
+              },
+              {
+                label:
+                  "KAMERA KALİTESİ",
+                value:
+                  getFeatureValueCell(
+                    getCameraQualityText(
+                      specifications[
+                        "sixChannelCameraQuality"
+                      ]
+                    )
+                  ),
+              },
+              {
+                label:
+                  "MONİTÖR ADEDİ",
+                value:
+                  getFeatureValueCell(
+                    "1"
+                  ),
+              },
+              {
+                label:
+                  "MONİTÖR EKRAN BOYUTU",
+                value:
+                  getFeatureValueCell(
+                    getSpecificationText(
+                      specifications,
+                      "monitorScreenSize",
+                      '"'
+                    )
+                  ),
+              }
+            );
+          } else {
+            features.push({
               label:
                 "ÖN KAMERA KALİTESİ",
               value:
@@ -1648,61 +1705,61 @@ async function buildCustomerOfferDocument(
                     ]
                   )
                 ),
-            },
-          ];
-
-          const hasRearCamera =
-            cameraSetup ===
-              "front-rear" ||
-            cameraSetup ===
-              "front-rear-interior" ||
-            Boolean(
-              cleanString(
-                specifications[
-                  "rearCameraQuality"
-                ]
-              )
-            );
-
-          const hasInteriorCamera =
-            cameraSetup ===
-              "front-rear-interior" ||
-            Boolean(
-              cleanString(
-                specifications[
-                  "interiorCameraQuality"
-                ]
-              )
-            );
-
-          if (hasRearCamera) {
-            features.push({
-              label:
-                "ARKA KAMERA KALİTESİ",
-              value:
-                getFeatureValueCell(
-                  getCameraQualityText(
-                    specifications[
-                      "rearCameraQuality"
-                    ]
-                  )
-                ),
             });
-          }
 
-          if (hasInteriorCamera) {
-            features.push({
-              label:
-                "İÇ KAMERA KALİTESİ",
-              value:
-                getFeatureValueCell(
-                  getCameraQualityText(
-                    specifications[
-                      "interiorCameraQuality"
-                    ]
-                  )
-                ),
-            });
+            const hasRearCamera =
+              cameraSetup ===
+                "front-rear" ||
+              cameraSetup ===
+                "front-rear-interior" ||
+              Boolean(
+                cleanString(
+                  specifications[
+                    "rearCameraQuality"
+                  ]
+                )
+              );
+
+            const hasInteriorCamera =
+              cameraSetup ===
+                "front-rear-interior" ||
+              Boolean(
+                cleanString(
+                  specifications[
+                    "interiorCameraQuality"
+                  ]
+                )
+              );
+
+            if (hasRearCamera) {
+              features.push({
+                label:
+                  "ARKA KAMERA KALİTESİ",
+                value:
+                  getFeatureValueCell(
+                    getCameraQualityText(
+                      specifications[
+                        "rearCameraQuality"
+                      ]
+                    )
+                  ),
+              });
+            }
+
+            if (hasInteriorCamera) {
+              features.push({
+                label:
+                  "İÇ KAMERA KALİTESİ",
+                value:
+                  getFeatureValueCell(
+                    getCameraQualityText(
+                      specifications[
+                        "interiorCameraQuality"
+                      ]
+                    )
+                  ),
+              });
+            }
           }
 
           features.push(

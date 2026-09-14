@@ -44,3 +44,5 @@ next-env.d.ts
 /.stock-reservation-update-backup/
 INSTALL_UPDATE.cmd
 INSTALL_UPDATE.sh
+CHANGES.patch
+install-update.ps1

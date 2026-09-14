@@ -1,60 +1,84 @@
-# Car Audio Manager - Montaj Rezervasyonu / Gecikmeli Stok Cikisi
+# Car Audio Manager - Araç Kamerası 6 Kanal Güncellemesi V1
 
-Bu paket mevcut `car-audio-manager` proje kokune acilmak icin hazirlanmistir.
+Bu paket, kullanıcı tarafından gönderilen güncel kaynak dosyalar temel alınarak hazırlanmıştır.
 
-## V2 duzeltmesi
+## Değiştirilen dosyalar
 
-Onceki paketi uyguladiysaniz geri yukleme yapmayin. Bu surumu ayni proje kokune cikartip `INSTALL_UPDATE.cmd` dosyasini tekrar calistirabilirsiniz. Kurucu, `customers-page-client.tsx` icindeki interceptor importu daha once yanlislikla `"use client"` direktifinin ustune eklenmisse importu otomatik olarak direktifin altina tasir ve build oncesi siralamayi dogrular.
+- `src/lib/product-config.ts`
+- `src/lib/product-schema.ts`
+- `src/lib/customer-offer-pdf.ts`
+
+Gönderilen `product-form-dialog` ve `product-table` dosyalarında ek değişiklik gerekmedi. Form altyapısı zaten `visibleWhen` kurallarını destekliyor ve görünmeyen alanları payload'a eklemiyor.
+
+## Yeni davranış
+
+Araç Kamerası > Kamera Tipi alanına yeni `6 Kanal` seçeneği eklendi.
+
+`6 Kanal` seçildiğinde:
+
+- Ön / Arka / İç kamera kalite alanları gösterilmez.
+- `Kamera Kalitesi` tek kez seçilir.
+  - 720p
+  - 1080p HD
+  - 2K
+  - 4K
+- `Monitör Ekran Boyutu` seçilir.
+  - 7"
+  - 9"
+  - 10.1"
+- Sistem sabit olarak 6 kamera + 1 monitör kabul eder.
+- ADAS Desteği, Park Modu, Sallantı Sensörü ve SD Kart Desteği mevcut davranışla devam eder.
+
+Diğer kamera tipleri (`Ön`, `Ön - Arka`, `Ön - Arka - İç`) mevcut davranışlarını korur.
+
+## PDF / JPG çıktısı
+
+6 Kanal ürününde Araç Kamerası Özellikleri bölümünde şunlar gösterilir:
+
+- Kamera Tipi: 6 Kanal
+- Kamera Adedi: 6
+- Kamera Kalitesi
+- Monitör Adedi: 1
+- Monitör Ekran Boyutu
+- ADAS Desteği
+- Sallantı Sensörü
+- Park Halinde Kayıt
+- SD Kart Desteği
+
+`customer-offer-pdf.ts` aynı belge tanımını hem PDF hem JPG çıktısı için kullandığı için değişiklik iki çıktıya da yansır.
+
+Ayrıca eski tekliflerde araç kamerası snapshot specifications boşsa ürün API fallback kontrolü araç kamerası için de etkinleştirildi.
 
 ## Kurulum
 
-1. ZIP icerigini `package.json` dosyanizin bulundugu proje kokune, klasor yapisini koruyarak cikarin.
-2. Windows'ta `INSTALL_UPDATE.cmd` dosyasini calistirin.
-   - Alternatif: `node scripts/apply-stock-reservation-update.mjs`
-3. Ardindan `npm run build` calistirin.
+ZIP içeriğini proje köküne çıkarın. Proje kökünde `package.json` ve `src` klasörü bulunmalıdır.
 
-Kurucu, degistirdigi mevcut dosyalari otomatik olarak su klasore yedekler:
+Ardından:
 
-`.stock-reservation-update-backup/<tarih-saat>/`
+```powershell
+.\INSTALL_UPDATE.cmd
+```
 
-## Yeni akis
+Installer değiştireceği mevcut dosyaları önce şu klasöre yedekler:
 
-- `Satildi` / `start-sale` aninda fiziksel stok artik dusmez.
-- Teklif `installation_pending` oldugunda urunler mantiksal olarak montaj icin ayrilmis kabul edilir.
-- Siparis tamamlandiginda (`order-completed`) eksik/siparis verilen urunler stok miktarina eklenir; teklif Montaj Bekliyor'a gecer ama stoktan cikis yapilmaz.
-- Gercek stok cikisi yalnizca `complete-sale` (Montaj Yapildi / satis tamamlama) aninda yapilir.
-- Bir urun fiziksel stokta gorunuyor fakat baska `installation_pending` teklifler tarafindan ayrilmissa, yeni satis sirasinda kullaniciya secim penceresi acilir:
-  - `Yeni siparis ver`: ayrilmis stok kullanilmaz, cakisan miktar siparis ihtiyacina eklenir.
-  - `Stoktaki urunu kullan`: cakisan miktar icin yeni siparis acilmaz.
-- Eski kayitlarla uyumluluk icin `installation_pending` olup `stockDeductedAt` alani bulunan eski teklifler rezervasyon hesabina dahil edilmez; onlarin stok cikisi eski akista zaten yapilmistir.
+```text
+.vehicle-camera-six-channel-update-backup\<timestamp>\
+```
 
-## Degisen / eklenen dosyalar
+Alternatif olarak `UPDATED_FILES` klasörünün içeriğini proje köküne manuel olarak kopyalayabilirsiniz.
 
-Kurulum tamamlandiginda uygulama tarafinda su dosyalar degismis olur:
+Sonrasında:
 
-- `src/types/customer-offer-workflow.ts`
-- `src/lib/customer-offer-stock-workflow.ts`
-- `src/app/api/customer-system-offers/[id]/workflow/route.ts` (route request body'yi dogrudan aktariyorsa degisiklik gerekmeyebilir)
-- `src/components/customers/customers-page-client.tsx`
-- `src/components/customers/customer-offer-stock-decision-interceptor.tsx` (yeni)
+```powershell
+npm run build
+```
 
-Paket ayrica kurulum icin:
+## Test önerisi
 
-- `scripts/apply-stock-reservation-update.mjs`
-- `scripts/customer-offer-stock-workflow.tail.txt`
-- `INSTALL_UPDATE.cmd`
-- `INSTALL_UPDATE.sh`
-
-icerir.
-
-## Not
-
-`Stoktaki urunu kullan` secimi, baska bir montaj icin ayrilmis fiziksel stoğun bu yeni teklif tarafindan da kullanilmasina bilerek izin verir. O urun daha once baska bir montajda fiziksel olarak tuketilirse, `complete-sale` aninda backend yetersiz stok nedeniyle montaji tamamlamaz; boylece stok negatif olmaz.
-
-
-## V3 build duzeltmesi
-
-- MongoDB Driver TypeScript filtresindeki `stockDeductedAt: null` kaldirildi.
-- Yerine `stockDeductedAt: { $not: { $type: "date" } }` kullanildi.
-- Bu filtre yeni akista alani olmayan/null kayitlari rezervasyon sayar; gercek Date bulunan eski stok-dusulmus kayitlari rezervasyon hesabina katmaz.
-- V2 uygulanmis proje uzerine dogrudan calistirilabilir; geri yukleme gerekmez.
+1. Araç Kamerası sayfasında Yeni Ürün açın.
+2. Kamera Tipi = `6 Kanal` seçin.
+3. Sadece tek `Kamera Kalitesi` ve `Monitör Ekran Boyutu` alanının göründüğünü doğrulayın.
+4. 7", 9" ve 10.1" monitör seçeneklerini kontrol edin.
+5. Kamera kalitesi seçeneklerinin 720p, 1080p HD, 2K ve 4K olduğunu doğrulayın.
+6. ADAS / Park Modu / Sallantı Sensörü / SD Kart alanlarını doldurup kaydedin.
+7. Teklif oluşturup PDF ve JPG çıktısında 6 kamera + 1 monitör özelliklerini kontrol edin.

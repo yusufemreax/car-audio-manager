@@ -3373,7 +3373,7 @@ export function ProductFormDialog({
               />
 
               <p className="text-xs text-muted-foreground">
-                Opsiyoneldir. Link girerseniz USD fiyat alanı salt okunur olur ve fiyat EGB'den otomatik alınır. Link girmezseniz fiyatı manuel yazabilirsiniz.
+                Opsiyoneldir. Link girerseniz USD fiyat alanı salt okunur olur ve fiyat EGB&apos;den otomatik alınır. Link girmezseniz fiyatı manuel yazabilirsiniz.
               </p>
             </div>
 
