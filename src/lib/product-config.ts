@@ -486,6 +486,23 @@ export const productCategoryDefinitions:
         source: "specifications",
         inputType: "boolean",
       },
+      {
+        key: "coreCount",
+        label: "Çekirdek Sayısı",
+        source: "specifications",
+        inputType: "select",
+        required : true,
+        options: [
+          {
+            value: "4",
+            label: "4",
+          },
+          {
+            value: "8",
+            label: "8",
+          },
+        ],
+      },
     ],
   },
 
