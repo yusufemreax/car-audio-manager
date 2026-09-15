@@ -218,6 +218,11 @@ export function MultimediaPreparationPageClient() {
   const [, setSystemName] = useState("");
 
   const [
+    additionalDescription,
+    setAdditionalDescription,
+  ] = useState("");
+
+  const [
     vehicleCatalog,
     setVehicleCatalog,
   ] = useState<VehicleCatalogResponse | null>(null);
@@ -940,6 +945,11 @@ export function MultimediaPreparationPageClient() {
 
           setSystemName(
             preparation.name
+          );
+
+          setAdditionalDescription(
+            preparation.additionalDescription ??
+              ""
           );
 
           setSelectedVehicleBrandId(
@@ -1689,6 +1699,15 @@ export function MultimediaPreparationPageClient() {
         vehicleGenerationId:
           selectedVehicleGenerationId,
 
+        ...(additionalDescription.trim()
+          ? {
+              additionalDescription:
+                additionalDescription
+                  .trim()
+                  .slice(0, 500),
+            }
+          : {}),
+
         ...(selectedTemplate
           ? {
               templateId:
@@ -2017,6 +2036,7 @@ export function MultimediaPreparationPageClient() {
          * kaldırabiliriz.
          */
         setSystemName("");
+        setAdditionalDescription("");
         setSelectedVehicleBrandId("");
         setSelectedVehicleModelId("");
         setSelectedVehicleGenerationId("");
@@ -2113,6 +2133,24 @@ export function MultimediaPreparationPageClient() {
             Hazır multimedya yükleniyor...
           </div>
         )}
+      </div>
+
+      <div className="max-w-2xl space-y-2">
+        <Label htmlFor="multimedia-additional-description">
+          Ek Açıklama (Opsiyonel)
+        </Label>
+        <Input
+          id="multimedia-additional-description"
+          value={additionalDescription}
+          maxLength={500}
+          onChange={(event) => {
+            setAdditionalDescription(
+              event.target.value
+            );
+            setSuccessMessage(null);
+          }}
+          placeholder="Örn: Piano black çerçeve, kablosuz CarPlay"
+        />
       </div>
 
       <Card>
@@ -3129,7 +3167,7 @@ export function MultimediaPreparationPageClient() {
 
                   <p className="text-xs text-muted-foreground">
                     Komisyon yalnızca
-                    "Komisyona Dahil"
+                    &quot;Komisyona Dahil&quot;
                     seçili ürünler
                     üzerinden
                     hesaplanır.

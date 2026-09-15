@@ -32,6 +32,7 @@ export interface MultimediaPreparationDocument
   multimediaScreenSize?: string;
   multimediaRam?: string;
   multimediaStorage?: string;
+  additionalDescription?: string;
 }
 
 let indexPromise: Promise<void> | null = null;
@@ -122,6 +123,12 @@ export function serializeMultimediaPreparation(
       ? {
           multimediaStorage:
             preparation.multimediaStorage,
+        }
+      : {}),
+    ...(preparation.additionalDescription
+      ? {
+          additionalDescription:
+            preparation.additionalDescription,
         }
       : {}),
   };

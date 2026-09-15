@@ -9,6 +9,10 @@ import {
 } from "react";
 
 import {
+  useRouter,
+} from "next/navigation";
+
+import {
   Copy,
   Eye,
   Loader2,
@@ -123,6 +127,8 @@ function vehicleGeneration(
 }
 
 export function ReadyMultimediasPageClient() {
+  const router = useRouter();
+
   const [
     systems,
     setSystems,
@@ -204,6 +210,7 @@ export function ReadyMultimediasPageClient() {
         ${system.multimediaScreenSize ?? ""}
         ${system.multimediaRam ?? ""}
         ${system.multimediaStorage ?? ""}
+        ${system.additionalDescription ?? ""}
         ${products}
       `.toLocaleLowerCase("tr-TR");
 
@@ -239,8 +246,9 @@ export function ReadyMultimediasPageClient() {
   const editSystem = (
     system: MultimediaPreparation
   ) => {
-    window.location.href =
-      `/multimedia-preparation?editId=${encodeURIComponent(system.id)}`;
+    router.push(
+      `/multimedia-preparation?editId=${encodeURIComponent(system.id)}`
+    );
   };
 
   const openDetail = (
@@ -384,7 +392,7 @@ export function ReadyMultimediasPageClient() {
               setSearch(event.target.value)
             }
             className="pl-9"
-            placeholder="Marka, model, kasa, ekran, RAM veya hafıza ara..."
+            placeholder="Marka, model, kasa, ekran, RAM, hafıza veya açıklama ara..."
           />
         </div>
 
@@ -405,12 +413,13 @@ export function ReadyMultimediasPageClient() {
         ) : (
           <div className="w-full min-w-0 overflow-hidden rounded-xl border bg-card">
             <div className="w-full overflow-x-auto">
-              <Table className="min-w-[1450px]">
+              <Table className="min-w-[1650px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[250px]">Araç</TableHead>
                     <TableHead className="text-center">Ekran</TableHead>
                     <TableHead className="text-center">RAM / Hafıza</TableHead>
+                    <TableHead className="min-w-[220px]">Ek Açıklama</TableHead>
                     <TableHead className="text-center">Ürün</TableHead>
                     <TableHead className="text-right">Ürünler</TableHead>
                     <TableHead className="text-right">İşçilik</TableHead>
@@ -454,6 +463,12 @@ export function ReadyMultimediasPageClient() {
                         <Badge variant="outline" className="font-mono text-sm">
                           {formatRamStorage(system)}
                         </Badge>
+                      </TableCell>
+
+                      <TableCell>
+                        <span className="line-clamp-2 text-sm text-muted-foreground">
+                          {system.additionalDescription || "-"}
+                        </span>
                       </TableCell>
 
                       <TableCell className="text-center">
@@ -570,6 +585,9 @@ export function ReadyMultimediasPageClient() {
                     </DialogTitle>
                     <DialogDescription>
                       {vehicleGeneration(selectedSystem)} · {formatScreenSize(selectedSystem.multimediaScreenSize)} · {formatRamStorage(selectedSystem)}
+                      {selectedSystem.additionalDescription
+                        ? ` · ${selectedSystem.additionalDescription}`
+                        : ""}
                     </DialogDescription>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

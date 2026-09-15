@@ -18,6 +18,7 @@ export interface MultimediaPreparation
   multimediaScreenSize?: string;
   multimediaRam?: string;
   multimediaStorage?: string;
+  additionalDescription?: string;
 }
 
 export interface MultimediaPreparationPayload
@@ -25,4 +26,5 @@ export interface MultimediaPreparationPayload
   vehicleBrandId: string;
   vehicleModelId: string;
   vehicleGenerationId: string;
+  additionalDescription?: string;
 }

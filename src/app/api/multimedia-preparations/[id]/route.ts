@@ -254,6 +254,10 @@ export async function PUT(
       unset.multimediaStorage = "";
     }
 
+    if (!preparationData.additionalDescription) {
+      unset.additionalDescription = "";
+    }
+
     await collection.updateOne(
       {
         _id:

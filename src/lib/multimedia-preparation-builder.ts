@@ -73,6 +73,10 @@ export async function buildMultimediaPreparationData(
     cleanString(body.vehicleGenerationId),
     "araç kasa ID"
   );
+  const additionalDescription =
+    cleanString(
+      body.additionalDescription
+    ).slice(0, 500);
 
   const vehicleCollections =
     await getVehicleCatalogCollections();
@@ -205,6 +209,9 @@ export async function buildMultimediaPreparationData(
       : {}),
     ...(multimediaStorage
       ? { multimediaStorage }
+      : {}),
+    ...(additionalDescription
+      ? { additionalDescription }
       : {}),
   };
 }

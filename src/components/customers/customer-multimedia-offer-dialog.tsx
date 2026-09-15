@@ -77,6 +77,7 @@ function multimediaLabel(system: MultimediaPreparation) {
     system.multimediaStorage
       ? `${system.multimediaStorage.replace(/\s*GB\s*/gi, "").trim()} GB`
       : null,
+    system.additionalDescription?.trim() || null,
   ].filter(Boolean);
 
   return details.length > 0
