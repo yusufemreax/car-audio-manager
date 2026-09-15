@@ -11,6 +11,10 @@ import {
   z,
 } from "zod";
 
+import type {
+  SystemPreparation,
+} from "@/types/system-preparation";
+
 import {
   getCustomersCollection,
 } from "@/lib/customers-collection";
@@ -21,12 +25,26 @@ import {
 } from "@/lib/system-preparations-collection";
 
 import {
+  getMultimediaPreparationsCollection,
+  serializeMultimediaPreparation,
+} from "@/lib/multimedia-preparations-collection";
+
+import {
   getCustomerSystemOffersCollection,
   serializeCustomerSystemOffer,
 } from "@/lib/customer-system-offers-collection";
 
 const offerSchema =
   z.object({
+    offerType: z
+      .enum([
+        "system",
+        "multimedia",
+      ])
+      .default(
+        "system"
+      ),
+
     customerId: z
       .string()
       .refine(
@@ -166,6 +184,7 @@ export async function POST(
     }
 
     const {
+      offerType,
       customerId,
       vehicleId,
       readySystemId,
@@ -221,40 +240,113 @@ export async function POST(
       );
     }
 
-    /*
-     * READY SYSTEM
-     */
-    const systems =
-      await getSystemPreparationsCollection();
+    let sourceId: ObjectId;
+    let systemSnapshot: SystemPreparation;
+    let sourceCustomerTotalTry: number;
+    let sourceProfitTry: number;
 
-    const readySystem =
-      await systems.findOne({
-        _id:
-          new ObjectId(
+    if (offerType === "multimedia") {
+      if (
+        !vehicle.vehicleGenerationId
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Müşteri aracı araç kataloğuna bağlı değil.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const multimediaCollection =
+        await getMultimediaPreparationsCollection();
+      const multimedia =
+        await multimediaCollection.findOne({
+          _id: new ObjectId(
             readySystemId
           ),
+          status: "ready",
+        });
 
-        status:
-          "ready",
-      });
+      if (!multimedia) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Hazır multimedya bulunamadı.",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
 
-    if (!readySystem) {
-      return NextResponse.json(
-        {
-          success: false,
+      if (
+        multimedia.vehicleGenerationId.toString() !==
+        vehicle.vehicleGenerationId
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Seçilen hazır multimedya müşteri aracıyla uyumlu değil.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
 
-          message:
-            "Hazır sistem bulunamadı.",
-        },
-        {
-          status: 404,
-        }
-      );
+      sourceId = multimedia._id;
+      systemSnapshot =
+        serializeMultimediaPreparation(
+          multimedia
+        );
+      sourceCustomerTotalTry =
+        multimedia.customerTotalTry;
+      sourceProfitTry =
+        multimedia.profitTry;
+    } else {
+      const systems =
+        await getSystemPreparationsCollection();
+      const readySystem =
+        await systems.findOne({
+          _id: new ObjectId(
+            readySystemId
+          ),
+          status: "ready",
+        });
+
+      if (!readySystem) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Hazır sistem bulunamadı.",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      sourceId = readySystem._id;
+      systemSnapshot =
+        serializeSystemPreparation(
+          readySystem
+        );
+      sourceCustomerTotalTry =
+        readySystem.customerTotalTry;
+      sourceProfitTry =
+        readySystem.profitTry;
     }
 
     if (
       extraDiscountTry >
-      readySystem.customerTotalTry
+      sourceCustomerTotalTry
     ) {
       return NextResponse.json(
         {
@@ -269,19 +361,8 @@ export async function POST(
       );
     }
 
-    /*
-     * SNAPSHOT
-     *
-     * Genel hazır sistem artık
-     * müşteriden tamamen bağımsız.
-     */
-    const systemSnapshot =
-      serializeSystemPreparation(
-        readySystem
-      );
-
     const finalCustomerTotalTry =
-      readySystem.customerTotalTry -
+      sourceCustomerTotalTry -
       extraDiscountTry;
 
     /*
@@ -289,7 +370,7 @@ export async function POST(
      * kazançtan düşer.
      */
     const finalProfitTry =
-      readySystem.profitTry -
+      sourceProfitTry -
       extraDiscountTry;
 
     const collection =
@@ -300,6 +381,8 @@ export async function POST(
 
     const result =
       await collection.insertOne({
+        offerType,
+
         customerId:
           new ObjectId(
             customerId
@@ -308,7 +391,7 @@ export async function POST(
         vehicleId,
 
         readySystemId:
-          readySystem._id,
+          sourceId,
 
         systemSnapshot,
 
@@ -363,7 +446,7 @@ export async function POST(
         success: false,
 
         message:
-          "Sistem teklifi oluşturulamadı.",
+          "Teklif oluşturulamadı.",
       },
       {
         status: 500,

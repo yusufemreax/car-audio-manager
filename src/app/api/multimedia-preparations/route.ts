@@ -1,4 +1,8 @@
 import {
+  ObjectId,
+} from "mongodb";
+
+import {
   NextRequest,
   NextResponse,
 } from "next/server";
@@ -311,6 +315,29 @@ export async function GET(
         "status"
       );
 
+    const vehicleGenerationIdParam =
+      request.nextUrl.searchParams.get(
+        "vehicleGenerationId"
+      );
+
+    if (
+      vehicleGenerationIdParam &&
+      !ObjectId.isValid(
+        vehicleGenerationIdParam
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Geçersiz araç kasası bilgisi.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
     let status:
       SystemPreparationStatus |
       undefined;
@@ -352,12 +379,21 @@ export async function GET(
     const collection =
       await getMultimediaPreparationsCollection();
 
-    const filter =
-      status
-        ? {
-            status,
-          }
-        : {};
+    const filter: {
+      status?: SystemPreparationStatus;
+      vehicleGenerationId?: ObjectId;
+    } = {};
+
+    if (status) {
+      filter.status = status;
+    }
+
+    if (vehicleGenerationIdParam) {
+      filter.vehicleGenerationId =
+        new ObjectId(
+          vehicleGenerationIdParam
+        );
+    }
 
     const preparations =
       await collection

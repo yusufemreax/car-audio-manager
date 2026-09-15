@@ -17,6 +17,7 @@ import {
   FileDown,
   FileImage,
   Loader2,
+  MonitorSmartphone,
   PackageCheck,
   Plus,
   ShoppingCart,
@@ -53,6 +54,10 @@ import {
 import {
   CustomerSystemOfferDialog,
 } from "./customer-system-offer-dialog";
+
+import {
+  CustomerMultimediaOfferDialog,
+} from "./customer-multimedia-offer-dialog";
 
 import {
   CustomerOfferWorkflowDetailDialog,
@@ -282,6 +287,16 @@ export function CustomersPageClient() {
   const [
     offerVehicle,
     setOfferVehicle,
+  ] = useState<CustomerVehicle | null>(null);
+
+  const [
+    multimediaOfferCustomer,
+    setMultimediaOfferCustomer,
+  ] = useState<Customer | null>(null);
+
+  const [
+    multimediaOfferVehicle,
+    setMultimediaOfferVehicle,
   ] = useState<CustomerVehicle | null>(null);
 
   const [
@@ -1037,6 +1052,14 @@ export function CustomersPageClient() {
                 offer
               )}
             </Badge>
+
+            {offer.offerType ===
+              "multimedia" && (
+              <Badge variant="secondary">
+                <MonitorSmartphone className="size-3" />
+                Multimedya
+              </Badge>
+            )}
           </div>
 
           <div className="mt-1 text-xs text-muted-foreground">
@@ -1588,7 +1611,7 @@ export function CustomersPageClient() {
                                       </div>
                                     </AccordionTrigger>
 
-                                    <div className="flex shrink-0 items-center">
+                                    <div className="flex shrink-0 items-center gap-2">
                                       <Button
                                         type="button"
                                         size="sm"
@@ -1605,6 +1628,33 @@ export function CustomersPageClient() {
                                         <Plus className="size-4" />
                                         <span className="hidden sm:inline">
                                           Sistem Teklifi
+                                        </span>
+                                      </Button>
+
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={
+                                          !vehicle.vehicleGenerationId
+                                        }
+                                        title={
+                                          vehicle.vehicleGenerationId
+                                            ? "Uyumlu hazır multimedya teklifi ekle"
+                                            : "Araç katalog üzerinden eklenmelidir"
+                                        }
+                                        onClick={() => {
+                                          setMultimediaOfferCustomer(
+                                            customer
+                                          );
+                                          setMultimediaOfferVehicle(
+                                            vehicle
+                                          );
+                                        }}
+                                      >
+                                        <MonitorSmartphone className="size-4" />
+                                        <span className="hidden sm:inline">
+                                          Multimedya Teklifi
                                         </span>
                                       </Button>
                                     </div>
@@ -1717,6 +1767,41 @@ export function CustomersPageClient() {
             "all"
           );
 
+          void load();
+        }}
+      />
+
+      <CustomerMultimediaOfferDialog
+        open={Boolean(
+          multimediaOfferCustomer &&
+            multimediaOfferVehicle
+        )}
+        customer={
+          multimediaOfferCustomer
+        }
+        vehicle={
+          multimediaOfferVehicle
+        }
+        onOpenChange={(open) => {
+          if (!open) {
+            setMultimediaOfferCustomer(
+              null
+            );
+            setMultimediaOfferVehicle(
+              null
+            );
+          }
+        }}
+        onSaved={() => {
+          setMultimediaOfferCustomer(
+            null
+          );
+          setMultimediaOfferVehicle(
+            null
+          );
+          setWorkflowView(
+            "all"
+          );
           void load();
         }}
       />

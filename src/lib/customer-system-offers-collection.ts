@@ -15,9 +15,12 @@ import {
 import {
   CustomerSystemOffer,
   CustomerSystemOfferStatus,
+  CustomerSystemOfferType,
 } from "@/types/customer-system-offer";
 
 export interface CustomerSystemOfferDocument {
+  offerType?: CustomerSystemOfferType;
+
   customerId: ObjectId;
 
   vehicleId: string;
@@ -97,6 +100,9 @@ export function serializeCustomerSystemOffer(
   return {
     id:
       document._id.toHexString(),
+
+    offerType:
+      document.offerType ?? "system",
 
     customerId:
       document.customerId.toHexString(),

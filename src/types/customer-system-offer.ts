@@ -6,8 +6,14 @@ export type CustomerSystemOfferStatus =
   | "offered"
   | "sold";
 
+export type CustomerSystemOfferType =
+  | "system"
+  | "multimedia";
+
 export interface CustomerSystemOffer {
   id: string;
+
+  offerType: CustomerSystemOfferType;
 
   customerId: string;
 
@@ -35,6 +41,8 @@ export interface CustomerSystemOffer {
 }
 
 export interface CustomerSystemOfferPayload {
+  offerType?: CustomerSystemOfferType;
+
   customerId: string;
 
   vehicleId: string;
