@@ -33,11 +33,15 @@ import {
 } from "@/lib/products-service";
 
 import {
-  EgbPriceScraperError,
-  fetchEgbProductPrice,
-  isEgbUrl,
+  refreshProductPriceIfNeeded,
+} from "@/lib/product-price-refresh";
+
+import {
+  fetchProductSourcePrice,
+  getProductSourceErrorStatusCode,
+  isSupportedProductSourceUrl,
   roundCurrency,
-} from "@/lib/scraping/egb-price-scraper";
+} from "@/lib/scraping/product-source-price";
 
 interface RouteContext {
   params:
@@ -49,12 +53,10 @@ interface RouteContext {
 function cleanString(
   value: unknown
 ) {
-  return typeof value ===
-    "string"
+  return typeof value === "string"
     ? value.trim()
     : "";
 }
-
 
 function getObjectId(
   value: string
@@ -181,19 +183,14 @@ export async function PUT(
       cleanString(
         body.category
       );
+    const sourceUrl =
+      cleanString(
+        body.sourceUrl
+      );
     const suppliers =
       normalizeProductSuppliers(
         body.suppliers,
         false
-      );
-    const hasSourceUrlField =
-      Object.prototype.hasOwnProperty.call(
-        body,
-        "sourceUrl"
-      );
-    const requestedSourceUrl =
-      cleanString(
-        body.sourceUrl
       );
 
     if (!brand) {
@@ -241,8 +238,7 @@ export async function PUT(
     }
 
     if (
-      suppliers.length ===
-      0
+      suppliers.length === 0
     ) {
       return NextResponse.json(
         {
@@ -257,17 +253,16 @@ export async function PUT(
     }
 
     if (
-      hasSourceUrlField &&
-      requestedSourceUrl &&
-      !isEgbUrl(
-        requestedSourceUrl
+      sourceUrl &&
+      !isSupportedProductSourceUrl(
+        sourceUrl
       )
     ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.",
+            "Ürün linki b2begb.com veya ozdemirelektronik.com alan adına ait olmalıdır.",
         },
         {
           status: 400,
@@ -341,73 +336,87 @@ export async function PUT(
       );
     }
 
-    const effectiveSourceUrl =
-      hasSourceUrlField
-        ? requestedSourceUrl
-        : cleanString(
-            existing.sourceUrl
+    const now =
+      new Date();
+    const existingSourceUrl =
+      cleanString(
+        existing.sourceUrl
+      );
+
+    let priceUsd =
+      Number(
+        body.priceUsd
+      );
+    let sourceUnavailable:
+      boolean | undefined;
+    let priceCheckedAt:
+      Date | undefined;
+    let priceRefreshAttemptedAt:
+      Date | undefined;
+    let sourceAvailabilityCheckedAt:
+      Date | undefined;
+
+    if (sourceUrl) {
+      if (
+        sourceUrl ===
+        existingSourceUrl
+      ) {
+        const refreshed =
+          await refreshProductPriceIfNeeded(
+            existing
           );
 
+        priceUsd =
+          roundCurrency(
+            Number(
+              refreshed.priceUsd
+            ) || 0
+          );
+        sourceUnavailable =
+          refreshed.sourceUnavailable;
+        priceCheckedAt =
+          refreshed.priceCheckedAt;
+        priceRefreshAttemptedAt =
+          refreshed.priceRefreshAttemptedAt;
+        sourceAvailabilityCheckedAt =
+          refreshed.sourceAvailabilityCheckedAt;
+      } else {
+        const remote =
+          await fetchProductSourcePrice(
+            sourceUrl
+          );
+
+        priceUsd =
+          roundCurrency(
+            remote.priceUsd
+          );
+        sourceUnavailable =
+          false;
+        priceCheckedAt =
+          now;
+        priceRefreshAttemptedAt =
+          now;
+        sourceAvailabilityCheckedAt =
+          now;
+      }
+    }
+
     if (
-      effectiveSourceUrl &&
-      !isEgbUrl(
-        effectiveSourceUrl
-      )
+      !Number.isFinite(
+        priceUsd
+      ) ||
+      priceUsd < 0
     ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.",
+            "USD fiyatı 0 veya daha büyük olmalıdır.",
         },
         {
           status: 400,
         }
       );
-    }
-
-    const now =
-      new Date();
-
-    let priceUsd: number;
-
-    if (effectiveSourceUrl) {
-      /*
-       * Linkli üründe fiyat manuel değiştirilemez.
-       * PUT sırasında server EGB'den yeniden okur.
-       */
-      const remotePrice =
-        await fetchEgbProductPrice(
-          effectiveSourceUrl
-        );
-
-      priceUsd =
-        roundCurrency(
-          remotePrice.priceUsd
-        );
-    } else {
-      priceUsd =
-        Number(
-          body.priceUsd
-        );
-
-      if (
-        !Number.isFinite(
-          priceUsd
-        ) ||
-        priceUsd < 0
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "USD fiyatı 0 veya daha büyük olmalıdır.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
     }
 
     const subCategory =
@@ -430,16 +439,6 @@ export async function PUT(
           priceUsd,
           category,
           suppliers,
-          ...(effectiveSourceUrl
-            ? {
-                sourceUrl:
-                  effectiveSourceUrl,
-                priceCheckedAt:
-                  now,
-                priceRefreshAttemptedAt:
-                  now,
-              }
-            : {}),
           specifications:
             body.specifications &&
             typeof body.specifications ===
@@ -448,6 +447,32 @@ export async function PUT(
               : {},
           updatedAt:
             now,
+          ...(sourceUrl
+            ? {
+                sourceUrl,
+                ...(priceCheckedAt
+                  ? {
+                      priceCheckedAt,
+                    }
+                  : {}),
+                ...(priceRefreshAttemptedAt
+                  ? {
+                      priceRefreshAttemptedAt,
+                    }
+                  : {}),
+                ...(typeof sourceUnavailable ===
+                "boolean"
+                  ? {
+                      sourceUnavailable,
+                    }
+                  : {}),
+                ...(sourceAvailabilityCheckedAt
+                  ? {
+                      sourceAvailabilityCheckedAt,
+                    }
+                  : {}),
+              }
+            : {}),
           ...(subCategory
             ? {
                 subCategory,
@@ -467,20 +492,22 @@ export async function PUT(
             : {}),
         },
         $unset: {
-          ...(!subCategory
+          ...(!sourceUrl
             ? {
-                subCategory:
-                  "",
-              }
-            : {}),
-          ...(hasSourceUrlField &&
-          !requestedSourceUrl
-            ? {
-                sourceUrl:
-                  "",
+                sourceUrl: "",
                 priceCheckedAt:
                   "",
                 priceRefreshAttemptedAt:
+                  "",
+                sourceUnavailable:
+                  "",
+                sourceAvailabilityCheckedAt:
+                  "",
+              }
+            : {}),
+          ...(!subCategory
+            ? {
+                subCategory:
                   "",
               }
             : {}),
@@ -494,8 +521,7 @@ export async function PUT(
           !(imageUrl &&
             imagePublicId)
             ? {
-                imageUrl:
-                  "",
+                imageUrl: "",
                 imagePublicId:
                   "",
               }
@@ -528,23 +554,6 @@ export async function PUT(
       error
     );
 
-    if (
-      error instanceof
-        EgbPriceScraperError
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            error.message,
-        },
-        {
-          status:
-            error.statusCode,
-        }
-      );
-    }
-
     return NextResponse.json(
       {
         success: false,
@@ -554,7 +563,10 @@ export async function PUT(
             : "Ürün güncellenemedi.",
       },
       {
-        status: 500,
+        status:
+          getProductSourceErrorStatusCode(
+            error
+          ),
       }
     );
   }
@@ -587,11 +599,11 @@ export async function DELETE(
       );
     }
 
-    const products =
+    const collection =
       await getProductsCollection();
 
     const existing =
-      await products.findOne({
+      await collection.findOne({
         _id: objectId,
       });
 
@@ -608,43 +620,29 @@ export async function DELETE(
       );
     }
 
-    const inventory =
-      await getInventoryCollection();
-
-    const inventoryRecord =
-      await inventory.findOne({
-        productId: objectId,
-    });
-
-    if (
-      inventoryRecord &&
-      Number(
-        inventoryRecord.quantity
-      ) > 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Stokta bulunan ürün silinemez. Önce stok miktarını sıfırlayın.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
-    await inventory.deleteMany({
-      productId: objectId,
-    });
-
-    await products.deleteOne({
+    await collection.deleteOne({
       _id: objectId,
     });
 
+    try {
+      const inventoryCollection =
+        await getInventoryCollection();
+
+      await inventoryCollection.deleteOne({
+        productId:
+          objectId,
+      });
+    } catch (inventoryError) {
+      console.error(
+        "Product inventory could not be deleted:",
+        inventoryError
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      data: null,
+      message:
+        "Ürün silindi.",
     });
   } catch (error) {
     console.error(
@@ -656,9 +654,7 @@ export async function DELETE(
       {
         success: false,
         message:
-          error instanceof Error
-            ? error.message
-            : "Ürün silinemedi.",
+          "Ürün silinemedi.",
       },
       {
         status: 500,

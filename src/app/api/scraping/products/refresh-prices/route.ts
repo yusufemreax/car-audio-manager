@@ -17,9 +17,10 @@ import {
 } from "@/lib/product-price-refresh";
 
 import {
-  isEgbUrl,
+  getProductPriceSource,
+  getProductPriceSourceLabel,
   roundCurrency,
-} from "@/lib/scraping/egb-price-scraper";
+} from "@/lib/scraping/product-source-price";
 
 export const runtime =
   "nodejs";
@@ -37,6 +38,7 @@ interface RefreshPricesRequest {
 type RefreshItemStatus =
   | "updated"
   | "unchanged"
+  | "unavailable"
   | "skipped-no-url"
   | "skipped-unsupported-url"
   | "not-found"
@@ -47,13 +49,12 @@ interface RefreshItemResult {
   productCode?: string;
   brand?: string;
   model?: string;
+  source?: string;
   sourceUrl?: string;
   status: RefreshItemStatus;
   previousPriceUsd?: number;
-  remotePriceUsd?: number;
   currentPriceUsd?: number;
   differenceUsd?: number;
-  updatedAt?: string;
   message?: string;
 }
 
@@ -82,7 +83,7 @@ function cleanProductIds(
   );
 }
 
-function productIdentity(
+function identity(
   product: {
     productCode?: string;
     brand?: string;
@@ -121,8 +122,7 @@ export async function POST(
       );
 
     if (
-      productIds.length ===
-      0
+      productIds.length === 0
     ) {
       return NextResponse.json(
         {
@@ -159,7 +159,6 @@ export async function POST(
             productId
           )
       );
-
     const invalidIds =
       productIds.filter(
         (productId) =>
@@ -182,17 +181,16 @@ export async function POST(
 
     const products =
       await getProductsCollection();
-
-    const productDocuments =
+    const documents =
       validIds.length > 0
         ? await products
             .find({
               _id: {
                 $in:
                   validIds.map(
-                    (productId) =>
+                    (id) =>
                       new ObjectId(
-                        productId
+                        id
                       )
                   ),
               },
@@ -200,9 +198,9 @@ export async function POST(
             .toArray()
         : [];
 
-    const productMap =
+    const map =
       new Map(
-        productDocuments.map(
+        documents.map(
           (product) => [
             product._id.toString(),
             product,
@@ -215,7 +213,7 @@ export async function POST(
       validIds
     ) {
       const product =
-        productMap.get(
+        map.get(
           productId
         );
 
@@ -230,11 +228,10 @@ export async function POST(
         continue;
       }
 
-      const identity =
-        productIdentity(
+      const base =
+        identity(
           product
         );
-
       const sourceUrl =
         typeof product.sourceUrl ===
           "string"
@@ -244,7 +241,7 @@ export async function POST(
       if (!sourceUrl) {
         results.push({
           productId,
-          ...identity,
+          ...base,
           status:
             "skipped-no-url",
           message:
@@ -253,15 +250,20 @@ export async function POST(
         continue;
       }
 
-      if (!isEgbUrl(sourceUrl)) {
+      const source =
+        getProductPriceSource(
+          sourceUrl
+        );
+
+      if (!source) {
         results.push({
           productId,
-          ...identity,
+          ...base,
           sourceUrl,
           status:
             "skipped-unsupported-url",
           message:
-            "Bu ürün linki için henüz desteklenen bir fiyat sağlayıcısı yok.",
+            "Bu ürün linki için desteklenen fiyat sağlayıcısı yok.",
         });
         continue;
       }
@@ -272,7 +274,6 @@ export async function POST(
             product.priceUsd
           ) || 0
         );
-
       const alreadyCheckedToday =
         isProductPriceRefreshAttemptedToday(
           product
@@ -286,14 +287,12 @@ export async function POST(
               force: true,
             }
           );
-
         const currentPriceUsd =
           roundCurrency(
             Number(
               refreshed.priceUsd
             ) || 0
           );
-
         const differenceUsd =
           roundCurrency(
             currentPriceUsd -
@@ -306,16 +305,18 @@ export async function POST(
         ) {
           results.push({
             productId,
-            ...identity,
+            ...base,
+            source,
             sourceUrl,
-            status: "failed",
+            status:
+              "unavailable",
             previousPriceUsd,
             currentPriceUsd,
             differenceUsd: 0,
             message:
               alreadyCheckedToday
-                ? "Ürün bugün zaten kontrol edildi; EGB sayfası 404 durumunda."
-                : "EGB ürün sayfası 404 döndü. Fiyat korunarak ürün satışta değil olarak işaretlendi.",
+                ? "Ürün bugün zaten kontrol edildi; kaynak ürün satışta değil durumunda."
+                : `${getProductPriceSourceLabel(source)} ürün kaynağı erişilemiyor veya ürün stokta yok. Fiyat korunarak ürün satışta değil olarak işaretlendi.`,
           });
           continue;
         }
@@ -326,13 +327,12 @@ export async function POST(
         ) {
           results.push({
             productId,
-            ...identity,
+            ...base,
+            source,
             sourceUrl,
             status:
               "unchanged",
             previousPriceUsd,
-            remotePriceUsd:
-              currentPriceUsd,
             currentPriceUsd,
             differenceUsd: 0,
             message:
@@ -345,29 +345,25 @@ export async function POST(
 
         results.push({
           productId,
-          ...identity,
+          ...base,
+          source,
           sourceUrl,
-          status: "updated",
+          status:
+            "updated",
           previousPriceUsd,
-          remotePriceUsd:
-            currentPriceUsd,
           currentPriceUsd,
           differenceUsd,
-          ...(refreshed.updatedAt instanceof Date
-            ? {
-                updatedAt:
-                  refreshed.updatedAt.toISOString(),
-              }
-            : {}),
           message:
             "Ürün fiyatı güncellendi.",
         });
       } catch (error) {
         results.push({
           productId,
-          ...identity,
+          ...base,
+          source,
           sourceUrl,
-          status: "failed",
+          status:
+            "failed",
           previousPriceUsd,
           message:
             error instanceof Error
@@ -377,61 +373,41 @@ export async function POST(
       }
     }
 
-    const countByStatus =
-      (
-        status:
-          RefreshItemStatus
-      ) =>
+    const count =
+      (status: RefreshItemStatus) =>
         results.filter(
           (item) =>
             item.status ===
             status
         ).length;
 
-    const updatedCount =
-      countByStatus(
-        "updated"
-      );
-    const unchangedCount =
-      countByStatus(
-        "unchanged"
-      );
-    const skippedNoUrlCount =
-      countByStatus(
-        "skipped-no-url"
-      );
-    const skippedUnsupportedUrlCount =
-      countByStatus(
-        "skipped-unsupported-url"
-      );
-    const notFoundCount =
-      countByStatus(
-        "not-found"
-      );
-    const failedCount =
-      countByStatus(
-        "failed"
-      );
-
     return NextResponse.json({
       success: true,
       message:
-        failedCount > 0
-          ? "Toplu fiyat kontrolü tamamlandı. Bazı ürünler 404 veya başka bir hata nedeniyle güncellenemedi."
-          : updatedCount > 0
-            ? "Toplu fiyat kontrolü tamamlandı ve değişen fiyatlar güncellendi."
-            : "Toplu fiyat kontrolü tamamlandı. Bugün tekrar kontrol gerektiren fiyat bulunamadı.",
+        "Toplu fiyat kontrolü tamamlandı.",
       data: {
         requestedCount:
           productIds.length,
         processedCount:
           results.length,
-        updatedCount,
-        unchangedCount,
-        skippedNoUrlCount,
-        skippedUnsupportedUrlCount,
-        notFoundCount,
-        failedCount,
+        updatedCount:
+          count("updated"),
+        unchangedCount:
+          count("unchanged"),
+        unavailableCount:
+          count("unavailable"),
+        skippedNoUrlCount:
+          count(
+            "skipped-no-url"
+          ),
+        skippedUnsupportedUrlCount:
+          count(
+            "skipped-unsupported-url"
+          ),
+        notFoundCount:
+          count("not-found"),
+        failedCount:
+          count("failed"),
         items:
           results,
       },

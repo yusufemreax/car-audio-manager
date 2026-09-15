@@ -41,6 +41,7 @@ export interface Product {
   suppliers: ProductSupplier[];
   sourceUrl?: string;
   priceCheckedAt?: string;
+  priceRefreshAttemptedAt?: string;
   /** Son günlük kontrolde ürün kaynağı HTTP 404 döndürdüyse true. */
   sourceUnavailable?: boolean;
   /** Ürün kaynağının erişilebilirlik durumunun son kontrol zamanı. */

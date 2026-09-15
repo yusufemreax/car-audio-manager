@@ -7,9 +7,13 @@ import {
   MongoServerError,
 } from "mongodb";
 
-import {
+import type {
   ProductPayload,
 } from "@/types/product";
+
+import {
+  normalizeProductSuppliers,
+} from "@/types/supplier";
 
 import {
   getProductsCollection,
@@ -32,46 +36,30 @@ import {
   isProductCategory,
 } from "@/lib/product-config";
 
-/*
- * =========================================================
- * HELPERS
- * =========================================================
- */
+import {
+  fetchProductSourcePrice,
+  getProductSourceErrorStatusCode,
+  isSupportedProductSourceUrl,
+  roundCurrency,
+} from "@/lib/scraping/product-source-price";
 
 function cleanString(
   value: unknown
 ) {
-  return typeof value ===
-    "string"
+  return typeof value === "string"
     ? value.trim()
     : "";
 }
 
-/*
- * =========================================================
- * GET
- *
- * /api/products
- * /api/products?category=speaker
- * =========================================================
- */
-
 export async function GET(
-  request:
-    NextRequest
+  request: NextRequest
 ) {
   try {
     const category =
-      request.nextUrl
-        .searchParams
-        .get(
-          "category"
-        );
+      request.nextUrl.searchParams.get(
+        "category"
+      );
 
-    /*
-     * Category gönderilmiş fakat
-     * geçerli değilse 400.
-     */
     if (
       category &&
       !isProductCategory(
@@ -80,24 +68,16 @@ export async function GET(
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Geçersiz ürün kategorisi.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
-    /*
-     * Ürün listesi merkezi fiyat servisi üzerinden okunur. Böylece kaynak linki
-     * olan ürünler Istanbul gününde en fazla bir kez EGB'den kontrol edilir ve
-     * 404 durumu da ürün kaydına işlenir.
-     */
     const products =
       await getProductsWithFreshPrices(
         category &&
@@ -109,22 +89,13 @@ export async function GET(
       );
 
     return NextResponse.json({
-      success:
-        true,
-
+      success: true,
       data:
         products.map(
-          (
-            product
-          ) =>
-            serializeProduct(
-              product
-            )
+          serializeProduct
         ),
     });
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "GET /api/products error:",
       error
@@ -132,89 +103,63 @@ export async function GET(
 
     return NextResponse.json(
       {
-        success:
-          false,
-
+        success: false,
         message:
           "Ürünler getirilemedi.",
       },
       {
-        status:
-          500,
+        status: 500,
       }
     );
   }
 }
 
-/*
- * =========================================================
- * POST
- *
- * CREATE PRODUCT
- * =========================================================
- */
-
 export async function POST(
-  request:
-    NextRequest
+  request: NextRequest
 ) {
   try {
     const body =
       (await request.json()) as ProductPayload;
 
-    /*
-     * =====================================================
-     * VALIDATION
-     * =====================================================
-     */
-
     const brand =
       cleanString(
         body.brand
       );
-
     const model =
       cleanString(
         body.model
       );
-
     const category =
       cleanString(
         body.category
       );
+    const sourceUrl =
+      cleanString(
+        body.sourceUrl
+      );
 
-    if (
-      !brand
-    ) {
+    if (!brand) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Marka zorunludur.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
-    if (
-      !model
-    ) {
+    if (!model) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Model zorunludur.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
@@ -227,94 +172,121 @@ export async function POST(
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Geçerli bir ürün kategorisi zorunludur.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
-    const priceUsd =
+    const suppliers =
+      normalizeProductSuppliers(
+        body.suppliers,
+        false
+      );
+
+    if (
+      suppliers.length === 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "En az bir tedarikçi seçmelisiniz.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      sourceUrl &&
+      !isSupportedProductSourceUrl(
+        sourceUrl
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Ürün linki b2begb.com veya ozdemirelektronik.com alan adına ait olmalıdır.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    let priceUsd =
       Number(
         body.priceUsd
       );
+    let remoteCheckedAt:
+      Date | null = null;
+
+    if (sourceUrl) {
+      const remote =
+        await fetchProductSourcePrice(
+          sourceUrl
+        );
+
+      priceUsd =
+        roundCurrency(
+          remote.priceUsd
+        );
+      remoteCheckedAt =
+        new Date();
+    }
 
     if (
       !Number.isFinite(
         priceUsd
       ) ||
-      priceUsd <
-        0
+      priceUsd < 0
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "USD fiyatı 0 veya daha büyük olmalıdır.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
-
-    /*
-     * =====================================================
-     * CLOUDINARY VALIDATION
-     *
-     * imageUrl varsa imagePublicId de olmak zorunda.
-     * Tersi de aynı şekilde.
-     * =====================================================
-     */
 
     const imageUrl =
       cleanString(
         body.imageUrl
       );
-
     const imagePublicId =
       cleanString(
         body.imagePublicId
       );
 
     if (
-      (
-        imageUrl &&
-        !imagePublicId
-      ) ||
-      (
-        !imageUrl &&
-        imagePublicId
-      )
+      (imageUrl &&
+        !imagePublicId) ||
+      (!imageUrl &&
+        imagePublicId)
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Ürün görsel bilgileri eksik.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
-    /*
-     * Yalnızca Cloudinary HTTPS URL
-     * kabul edelim.
-     */
     if (
       imageUrl &&
       !imageUrl.startsWith(
@@ -323,44 +295,26 @@ export async function POST(
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Geçersiz ürün görseli adresi.",
         },
         {
-          status:
-            400,
+          status: 400,
         }
       );
     }
 
     const productsCollection =
       await getProductsCollection();
-
     const inventoryCollection =
       await getInventoryCollection();
-
-    /*
-     * =====================================================
-     * PRODUCT CODE
-     *
-     * Client'tan gelen productCode'a güvenmiyoruz.
-     *
-     * Backend yeniden üretiyor.
-     *
-     * Aynı anda iki insert olması ihtimalinde
-     * unique index 11000 hatası verirse tekrar deniyoruz.
-     * =====================================================
-     */
 
     const MAX_CODE_RETRY =
       5;
 
     for (
-      let attempt =
-        1;
+      let attempt = 1;
       attempt <=
       MAX_CODE_RETRY;
       attempt++
@@ -374,27 +328,29 @@ export async function POST(
         const now =
           new Date();
 
-        /*
-         * ===============================================
-         * PRODUCT DOCUMENT
-         * ===============================================
-         */
-
         const productDocument = {
           productCode,
-
           brand,
-
           model,
-
           priceUsd,
-
           category,
-
-          /*
-           * Alt kategori boşsa MongoDB'ye
-           * gereksiz boş string yazma.
-           */
+          suppliers,
+          ...(sourceUrl
+            ? {
+                sourceUrl,
+                priceCheckedAt:
+                  remoteCheckedAt ??
+                  now,
+                priceRefreshAttemptedAt:
+                  remoteCheckedAt ??
+                  now,
+                sourceUnavailable:
+                  false,
+                sourceAvailabilityCheckedAt:
+                  remoteCheckedAt ??
+                  now,
+              }
+            : {}),
           ...(cleanString(
             body.subCategory
           )
@@ -405,14 +361,12 @@ export async function POST(
                   ),
               }
             : {}),
-
           specifications:
             body.specifications &&
             typeof body.specifications ===
               "object"
               ? body.specifications
               : {},
-
           ...(cleanString(
             body.description
           )
@@ -423,47 +377,21 @@ export async function POST(
                   ),
               }
             : {}),
-
-          /*
-           * =============================================
-           * CLOUDINARY
-           * =============================================
-           */
-
           ...(imageUrl &&
           imagePublicId
             ? {
                 imageUrl,
-
                 imagePublicId,
               }
             : {}),
-
-          createdAt:
-            now,
-
-          updatedAt:
-            now,
+          createdAt: now,
+          updatedAt: now,
         };
-
-        /*
-         * ===============================================
-         * INSERT PRODUCT
-         * ===============================================
-         */
 
         const insertResult =
           await productsCollection.insertOne(
             productDocument
           );
-
-        /*
-         * ===============================================
-         * CREATE INVENTORY
-         *
-         * Yeni ürün ilk oluşturulduğunda stok = 0.
-         * ===============================================
-         */
 
         try {
           await inventoryCollection.updateOne(
@@ -475,29 +403,20 @@ export async function POST(
               $setOnInsert: {
                 productId:
                   insertResult.insertedId,
-
-                quantity:
-                  0,
-
+                quantity: 0,
                 createdAt:
                   now,
-
                 updatedAt:
                   now,
               },
             },
             {
-              upsert:
-                true,
+              upsert: true,
             }
           );
         } catch (
           inventoryError
         ) {
-          /*
-           * Inventory oluşturulamazsa
-           * yarım ürün kaydı bırakmayalım.
-           */
           await productsCollection.deleteOne(
             {
               _id:
@@ -508,12 +427,6 @@ export async function POST(
           throw inventoryError;
         }
 
-        /*
-         * ===============================================
-         * RETURN CREATED PRODUCT
-         * ===============================================
-         */
-
         const createdProduct =
           await productsCollection.findOne(
             {
@@ -522,9 +435,7 @@ export async function POST(
             }
           );
 
-        if (
-          !createdProduct
-        ) {
+        if (!createdProduct) {
           throw new Error(
             "Oluşturulan ürün tekrar okunamadı."
           );
@@ -532,40 +443,24 @@ export async function POST(
 
         return NextResponse.json(
           {
-            success:
-              true,
-
+            success: true,
             data:
               serializeProduct(
                 createdProduct
               ),
           },
           {
-            status:
-              201,
+            status: 201,
           }
         );
-      } catch (
-        error
-      ) {
-        /*
-         * ===============================================
-         * DUPLICATE PRODUCT CODE
-         * ===============================================
-         */
-
+      } catch (error) {
         if (
           error instanceof
             MongoServerError &&
-          error.code ===
-            11000 &&
+          error.code === 11000 &&
           attempt <
             MAX_CODE_RETRY
         ) {
-          /*
-           * Başka istek aynı kodu bizden önce
-           * aldı. Yeni max değer ile tekrar dene.
-           */
           continue;
         }
 
@@ -575,20 +470,15 @@ export async function POST(
 
     return NextResponse.json(
       {
-        success:
-          false,
-
+        success: false,
         message:
           "Ürün kodu oluşturulamadı.",
       },
       {
-        status:
-          500,
+        status: 500,
       }
     );
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "POST /api/products error:",
       error
@@ -597,29 +487,28 @@ export async function POST(
     if (
       error instanceof
         MongoServerError &&
-      error.code ===
-        11000
+      error.code === 11000
     ) {
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           message:
             "Aynı ürün koduna sahip bir kayıt zaten bulunuyor.",
         },
         {
-          status:
-            409,
+          status: 409,
         }
       );
     }
 
+    const sourceStatus =
+      getProductSourceErrorStatusCode(
+        error
+      );
+
     return NextResponse.json(
       {
-        success:
-          false,
-
+        success: false,
         message:
           error instanceof Error
             ? error.message
@@ -627,7 +516,9 @@ export async function POST(
       },
       {
         status:
-          500,
+          sourceStatus !== 500
+            ? sourceStatus
+            : 500,
       }
     );
   }

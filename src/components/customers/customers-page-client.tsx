@@ -369,7 +369,7 @@ export function CustomersPageClient() {
             offersResponse,
           ] = await Promise.all([
             fetch(
-              "/api/customers",
+              "/api/customers/catalog-view",
               {
                 cache:
                   "no-store",
@@ -1545,8 +1545,26 @@ export function CustomersPageClient() {
                                           </div>
 
                                           <div className="mt-1 text-xs text-muted-foreground">
-                                            {vehicle.year ??
-                                              "-"}
+                                            {vehicle.vehicleGenerationName ? (
+                                              <>
+                                                {vehicle.vehicleGenerationName}
+                                                {typeof vehicle.vehicleStartYear === "number" &&
+                                                  typeof vehicle.vehicleEndYear === "number" && (
+                                                    <>
+                                                      {" "}·{" "}
+                                                      {vehicle.vehicleStartYear}-{vehicle.vehicleEndYear}
+                                                    </>
+                                                  )}
+                                                {typeof vehicle.year === "number" && (
+                                                  <>
+                                                    {" "}·{" "}
+                                                    {vehicle.year}
+                                                  </>
+                                                )}
+                                              </>
+                                            ) : (
+                                              vehicle.year ?? "-"
+                                            )}
 
                                             {vehicle.plate && (
                                               <>

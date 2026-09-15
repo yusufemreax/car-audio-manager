@@ -102,6 +102,12 @@ export function serializeProduct(
             product.priceCheckedAt.toISOString(),
         }
       : {}),
+    ...(product.priceRefreshAttemptedAt instanceof Date
+      ? {
+          priceRefreshAttemptedAt:
+            product.priceRefreshAttemptedAt.toISOString(),
+        }
+      : {}),
     ...(typeof product.sourceUnavailable === "boolean"
       ? {
           sourceUnavailable:

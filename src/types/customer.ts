@@ -1,5 +1,12 @@
 export interface CustomerVehicle {
   id: string;
+  vehicleBrandId?: string;
+  vehicleModelId?: string;
+  vehicleGenerationId?: string;
+  vehicleGenerationName?: string;
+  vehicleStartYear?: number;
+  vehicleEndYear?: number;
+
 
   brand: string;
 
@@ -41,6 +48,13 @@ export interface CustomerPayload {
 }
 
 export interface CustomerVehiclePayload {
+  vehicleBrandId?: string;
+  vehicleModelId?: string;
+  vehicleGenerationId?: string;
+  vehicleGenerationName?: string;
+  vehicleStartYear?: number;
+  vehicleEndYear?: number;
+
   brand: string;
 
   model: string;

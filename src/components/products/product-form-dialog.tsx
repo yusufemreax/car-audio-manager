@@ -127,7 +127,7 @@ interface SourcePriceResponse {
   success: boolean;
   message?: string;
   data?: {
-    source: "EGB";
+    source: "EGB" | "OZDEMIR";
     sourceUrl: string;
     finalUrl: string;
     responseStatus: number;
@@ -230,18 +230,89 @@ function isSupportedSourceUrl(
     const url =
       new URL(value);
 
+    if (url.protocol !== "https:") {
+      return false;
+    }
+
+    const host =
+      url.hostname.toLowerCase();
+
     return (
-      url.protocol === "https:" &&
-      (
-        url.hostname.toLowerCase() ===
-          "www.b2begb.com" ||
-        url.hostname.toLowerCase() ===
-          "b2begb.com"
-      )
+      host === "www.b2begb.com" ||
+      host === "b2begb.com" ||
+      host === "www.ozdemirelektronik.com" ||
+      host === "ozdemirelektronik.com"
     );
   } catch {
     return false;
   }
+}
+
+function getIstanbulDayKey(
+  value: string | Date | undefined
+) {
+  if (!value) {
+    return null;
+  }
+
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (
+    !Number.isFinite(
+      date.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Europe/Istanbul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).formatToParts(date);
+
+  const values =
+    new Map(
+      parts.map((part) => [
+        part.type,
+        part.value,
+      ])
+    );
+
+  return `${values.get("year")}-${values.get("month")}-${values.get("day")}`;
+}
+
+function wasProductSourceCheckedToday(
+  product: Product | null
+) {
+  if (!product) {
+    return false;
+  }
+
+  const today =
+    getIstanbulDayKey(
+      new Date()
+    );
+
+  return [
+    product.priceRefreshAttemptedAt,
+    product.priceCheckedAt,
+    product.sourceAvailabilityCheckedAt,
+  ].some(
+    (value) =>
+      getIstanbulDayKey(
+        value
+      ) === today
+  );
 }
 
 /*
@@ -879,7 +950,7 @@ export function ProductFormDialog({
    * SOURCE URL -> AUTOMATIC USD PRICE
    *
    * Link doluysa fiyat kullanıcı tarafından yazılmaz.
-   * 650 ms debounce sonrasında EGB'den okunur.
+   * 650 ms debounce sonrasında linkin alan adına göre EGB veya Özdemir Elektronik üzerinden okunur.
    * Backend de kayıt sırasında fiyatı yeniden doğrular.
    * =======================================================
    */
@@ -903,6 +974,28 @@ export function ProductFormDialog({
       return;
     }
 
+    /*
+     * Edit modunda aynı link bugün zaten merkezi fiyat servisi tarafından
+     * kontrol edildiyse dış siteye ikinci kez gitme. Mevcut MongoDB fiyatı
+     * formda kalır. Link değişirse normal preview akışı çalışır.
+     */
+    if (
+      product &&
+      sourceUrl ===
+        (product.sourceUrl ?? "").trim() &&
+      wasProductSourceCheckedToday(
+        product
+      )
+    ) {
+      setLoadingSourcePrice(
+        false
+      );
+      setSourcePriceError(
+        null
+      );
+      return;
+    }
+
     if (
       !isSupportedSourceUrl(
         sourceUrl
@@ -912,7 +1005,7 @@ export function ProductFormDialog({
         false
       );
       setSourcePriceError(
-        "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor."
+        "Yalnızca b2begb.com veya ozdemirelektronik.com ürün linkleri destekleniyor."
       );
 
       return;
@@ -934,7 +1027,7 @@ export function ProductFormDialog({
           try {
             const response =
               await fetch(
-                "/api/scraping/egb/price",
+                "/api/scraping/products/price",
                 {
                   method:
                     "POST",
@@ -1023,6 +1116,7 @@ export function ProductFormDialog({
   }, [
     open,
     form.sourceUrl,
+    product,
   ]);
 
   /*
@@ -1317,26 +1411,16 @@ export function ProductFormDialog({
       }
 
       const dependencyValue =
-        String(
-          form.specifications[
-            field.visibleWhen.key
-          ] ??
-          ""
-        );
-
-      if (
-        field.visibleWhen.values
-          ?.length
-      ) {
-        return field.visibleWhen.values.includes(
-          dependencyValue
-        );
-      }
+        form.specifications[
+          field.visibleWhen.key
+        ];
 
       return (
-        dependencyValue ===
-        (field.visibleWhen.value ??
-          "")
+        String(
+          dependencyValue ??
+          ""
+        ) ===
+        field.visibleWhen.value
       );
     };
 
@@ -1574,7 +1658,7 @@ export function ProductFormDialog({
             sourceUrl
           )
         ) {
-          return "Şimdilik yalnızca b2begb.com ürün linkleri destekleniyor.";
+          return "Yalnızca b2begb.com veya ozdemirelektronik.com ürün linkleri destekleniyor.";
         }
 
         if (loadingSourcePrice) {
@@ -3369,11 +3453,11 @@ export function ProductFormDialog({
                     })
                   );
                 }}
-                placeholder="https://www.b2begb.com/urun/..."
+                placeholder="https://www.b2begb.com/... veya https://ozdemirelektronik.com/..."
               />
 
               <p className="text-xs text-muted-foreground">
-                Opsiyoneldir. Link girerseniz USD fiyat alanı salt okunur olur ve fiyat EGB&apos;den otomatik alınır. Link girmezseniz fiyatı manuel yazabilirsiniz.
+                Opsiyoneldir. EGB veya Özdemir Elektronik ürün linki girerseniz USD fiyat alanı salt okunur olur ve fiyat ilgili kaynaktan otomatik alınır. Link girmezseniz fiyatı manuel yazabilirsiniz.
               </p>
             </div>
 

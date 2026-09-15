@@ -8,11 +8,12 @@ import {
 } from "@/lib/products-collection";
 
 import {
-  EgbPriceScraperError,
-  fetchEgbProductPrice,
-  isEgbUrl,
+  fetchProductSourcePrice,
+  getProductPriceSource,
+  getProductPriceSourceLabel,
+  isProductSourceNotFoundError,
   roundCurrency,
-} from "@/lib/scraping/egb-price-scraper";
+} from "@/lib/scraping/product-source-price";
 
 const PRODUCT_PRICE_REFRESH_CONCURRENCY =
   3;
@@ -45,7 +46,7 @@ function isUsableDate(
   );
 }
 
-function getIstanbulDayKey(
+export function getIstanbulDayKey(
   date: Date
 ) {
   const parts =
@@ -84,6 +85,14 @@ function getLastRefreshAttemptAt(
 
   if (
     isUsableDate(
+      product.sourceAvailabilityCheckedAt
+    )
+  ) {
+    return product.sourceAvailabilityCheckedAt;
+  }
+
+  if (
+    isUsableDate(
       product.priceCheckedAt
     )
   ) {
@@ -94,9 +103,9 @@ function getLastRefreshAttemptAt(
 }
 
 /**
- * Geriye uyumluluk için fonksiyon adı korunuyor.
- * Artık "fresh" = ürün bugün (Europe/Istanbul) en az bir kez kontrol edilmeye
- * çalışılmış demektir. Başarısız/404 denemeleri de aynı gün tekrar denenmez.
+ * Bir ürün kaynak linkine sahipse Istanbul takvim gününde en fazla bir kez
+ * dış kaynağa gidilir. Başarılı, 404 veya geçici hata fark etmeksizin o gün
+ * yeniden istek yapılmaz.
  */
 export function isProductPriceFresh(
   product: WithId<ProductDocument>,
@@ -183,24 +192,6 @@ function withUnavailableState(
     priceRefreshAttemptedAt:
       attemptedAt,
   };
-}
-
-function isSourceNotFoundError(
-  error: unknown
-) {
-  if (
-    !(error instanceof EgbPriceScraperError)
-  ) {
-    return false;
-  }
-
-  return (
-    error.code === "HTTP_ERROR" &&
-    Number(
-      error.details
-        ?.responseStatus
-    ) === 404
-  );
 }
 
 async function readLatestProduct(
@@ -307,7 +298,12 @@ async function performProductPriceRefresh(
   const attemptedAt =
     new Date();
 
-  if (!isEgbUrl(sourceUrl)) {
+  const source =
+    getProductPriceSource(
+      sourceUrl
+    );
+
+  if (!source) {
     await markRefreshAttempt(
       product,
       attemptedAt
@@ -321,7 +317,7 @@ async function performProductPriceRefresh(
 
   try {
     const remote =
-      await fetchEgbProductPrice(
+      await fetchProductSourcePrice(
         sourceUrl
       );
 
@@ -396,12 +392,12 @@ async function performProductPriceRefresh(
     );
   } catch (error) {
     if (
-      isSourceNotFoundError(
+      isProductSourceNotFoundError(
         error
       )
     ) {
       console.warn(
-        "EGB product page returned 404; price was preserved and product was marked unavailable:",
+        `${getProductPriceSourceLabel(source)} source product is unavailable (HTTP 404 or out of stock); stored price was preserved and product was marked unavailable:`,
         product._id.toString(),
         sourceUrl
       );
@@ -412,11 +408,6 @@ async function performProductPriceRefresh(
       );
     }
 
-    /*
-     * Ağ/login/5xx gibi geçici hatalarda eski fiyatı ve mevcut availability
-     * durumunu koruyoruz. Yine de aynı gün EGB'ye tekrar tekrar istek atmamak
-     * için attempt zamanını kaydediyoruz.
-     */
     try {
       await markRefreshAttempt(
         product,
@@ -435,12 +426,9 @@ async function performProductPriceRefresh(
     console.warn(
       "Product price refresh failed; stored price will be used:",
       product._id.toString(),
-      error instanceof
-        EgbPriceScraperError
-        ? `${error.code}: ${error.message}`
-        : error instanceof Error
-          ? error.message
-          : "unknown error"
+      error instanceof Error
+        ? error.message
+        : "unknown error"
     );
 
     return withAttemptDate(
@@ -456,11 +444,8 @@ export async function refreshProductPriceIfNeeded(
     force?: boolean;
   }
 ): Promise<WithId<ProductDocument>> {
-  /*
-   * force parametresi geriye uyumluluk için tutuluyor ancak günlük limit
-   * bilinçli olarak bypass edilmiyor. Bir ürün Istanbul gününde en fazla
-   * bir kez dış kaynaktan kontrol edilir.
-   */
+  // force geriye uyumluluk için korunuyor. Günlük limit bilinçli olarak
+  // bypass edilmez.
   if (
     isProductPriceFresh(
       product
@@ -516,8 +501,7 @@ export async function refreshProductPricesIfNeeded(
   WithId<ProductDocument>[]
 > {
   if (
-    products.length ===
-    0
+    products.length === 0
   ) {
     return [];
   }

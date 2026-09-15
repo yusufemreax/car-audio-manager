@@ -221,6 +221,47 @@ export function AppSidebar() {
     }
   }, [pathname]);
 
+  useEffect(() => {
+    if (
+      !pathname.startsWith(
+        "/system-parameters"
+      )
+    ) {
+      return;
+    }
+
+    setAccordionValue(
+      (current) =>
+        current.includes(
+          "system-parameters"
+        )
+          ? current
+          : [
+              ...current,
+              "system-parameters",
+            ]
+    );
+  }, [pathname]);
+
+  const isSystemParametersRoute =
+    pathname.startsWith(
+      "/system-parameters"
+    );
+
+  /* CAR_AUDIO_MULTIMEDIA_MENU_V1 */
+  useEffect(() => {
+    if (
+      pathname.startsWith("/multimedia-preparation") ||
+      pathname.startsWith("/ready-multimedias")
+    ) {
+      setAccordionValue((current) =>
+        current.includes("multimedias")
+          ? current
+          : [...current, "multimedias"]
+      );
+    }
+  }, [pathname]);
+
   const isProductsRoute =
     pathname.startsWith(
       "/products"
@@ -432,6 +473,115 @@ export function AppSidebar() {
                   </div>
                 </AccordionContent>
               </AccordionItem>
+
+              {/* ======================
+                  SİSTEM PARAMETRELERİ
+              ====================== */}
+              <AccordionItem
+                value="system-parameters"
+                className="border-none"
+              >
+                <AccordionTrigger
+                  className={`
+                    rounded-lg
+                    px-3
+                    py-2
+                    hover:bg-accent
+                    hover:no-underline
+                    ${
+                      isSystemParametersRoute
+                        ? "bg-accent text-foreground"
+                        : ""
+                    }
+                  `}
+                >
+                  <div className="flex items-center gap-3">
+                    <Settings2 className="size-4 shrink-0" />
+                    <span className="font-medium">
+                      Sistem Parametreleri
+                    </span>
+                  </div>
+                </AccordionTrigger>
+
+                <AccordionContent className="pb-1">
+                  <div className="ml-5 mt-1 border-l pl-3">
+                    <Link
+                      href="/system-parameters/vehicles"
+                      className={`
+                        mb-1
+                        block
+                        rounded-md
+                        px-3
+                        py-2
+                        text-sm
+                        transition-colors
+                        ${
+                          pathname ===
+                          "/system-parameters/vehicles"
+                            ? "bg-primary/10 font-medium text-primary"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        }
+                      `}
+                    >
+                      Araçlar
+                    </Link>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+              {/* CAR_AUDIO_MULTIMEDIA_MENU_V1 */}
+              <AccordionItem
+                value="multimedias"
+                className="border-none"
+              >
+                <AccordionTrigger
+                  className={`
+                    rounded-lg px-3 py-2
+                    hover:bg-accent hover:no-underline
+                    ${
+                      pathname.startsWith("/multimedia-preparation") ||
+                      pathname.startsWith("/ready-multimedias")
+                        ? "bg-accent text-foreground"
+                        : ""
+                    }
+                  `}
+                >
+                  <div className="flex items-center gap-3">
+                    <Package className="size-4 shrink-0" />
+                    <span className="font-medium">
+                      Multimedyalar
+                    </span>
+                  </div>
+                </AccordionTrigger>
+
+                <AccordionContent className="pb-1">
+                  <div className="ml-5 mt-1 border-l pl-3">
+                    <Link
+                      href="/multimedia-preparation"
+                      className={`
+                        mb-1 block rounded-md px-3 py-2 text-sm transition-colors
+                        ${pathname.startsWith("/multimedia-preparation")
+                          ? "bg-primary/10 font-medium text-primary"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground"}
+                      `}
+                    >
+                      Multimedya Tanımlama
+                    </Link>
+
+                    <Link
+                      href="/ready-multimedias"
+                      className={`
+                        mb-1 block rounded-md px-3 py-2 text-sm transition-colors
+                        ${pathname.startsWith("/ready-multimedias")
+                          ? "bg-primary/10 font-medium text-primary"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground"}
+                      `}
+                    >
+                      Hazır Multimedyalar
+                    </Link>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
             </Accordion>
 
 
