@@ -26,6 +26,10 @@ import {
   ProductSpecificationValue,
 } from "@/types/product";
 
+import type {
+  VehicleCatalogResponse,
+} from "@/types/vehicle-catalog";
+
 import {
   PRODUCT_SUPPLIERS,
   type ProductSupplier,
@@ -181,6 +185,14 @@ interface ProductFormState {
   >;
 
   description: string;
+
+  isUniversal: boolean;
+
+  vehicleBrandId: string;
+
+  vehicleModelId: string;
+
+  vehicleGenerationId: string;
 }
 
 /*
@@ -200,6 +212,10 @@ function createEmptyForm(): ProductFormState {
     sourceUrl: "",
     specifications: {},
     description: "",
+    isUniversal: false,
+    vehicleBrandId: "",
+    vehicleModelId: "",
+    vehicleGenerationId: "",
   };
 }
 
@@ -610,6 +626,28 @@ export function ProductFormDialog({
       ]
     );
 
+  const formCategoryFields =
+    useMemo(
+      () =>
+        resolvedCategory ===
+        "multimedia-frame"
+          ? categoryFields.filter(
+              (field) =>
+                ![
+                  "vehicleBrand",
+                  "vehicleModel",
+                  "compatibleYears",
+                ].includes(
+                  field.key
+                )
+            )
+          : categoryFields,
+      [
+        categoryFields,
+        resolvedCategory,
+      ]
+    );
+
   /*
    * =======================================================
    * STATE
@@ -657,6 +695,39 @@ export function ProductFormDialog({
     useState<ProductFormState>(
       createEmptyForm()
     );
+
+  const [
+    vehicleCatalog,
+    setVehicleCatalog,
+  ] = useState<VehicleCatalogResponse | null>(null);
+
+  const [
+    loadingVehicleCatalog,
+    setLoadingVehicleCatalog,
+  ] = useState(false);
+
+  const vehicleBrands =
+    vehicleCatalog?.brands ?? [];
+
+  const selectedVehicleBrand =
+    vehicleBrands.find(
+      (brand) =>
+        brand.id ===
+        form.vehicleBrandId
+    ) ?? null;
+
+  const vehicleModels =
+    selectedVehicleBrand?.models ?? [];
+
+  const selectedVehicleModel =
+    vehicleModels.find(
+      (model) =>
+        model.id ===
+        form.vehicleModelId
+    ) ?? null;
+
+  const vehicleGenerations =
+    selectedVehicleModel?.generations ?? [];
 
   const [
     usdTryRate,
@@ -772,7 +843,7 @@ export function ProductFormDialog({
 
       for (
         const field of
-        categoryFields
+        formCategoryFields
       ) {
         if (
           field.inputType !==
@@ -833,6 +904,21 @@ export function ProductFormDialog({
         description:
           product.description ??
           "",
+
+        isUniversal:
+          product.isUniversal === true,
+
+        vehicleBrandId:
+          product.vehicleBrandId ??
+          "",
+
+        vehicleModelId:
+          product.vehicleModelId ??
+          "",
+
+        vehicleGenerationId:
+          product.vehicleGenerationId ??
+          "",
       });
 
       setImageFile(
@@ -870,7 +956,7 @@ export function ProductFormDialog({
 
     for (
       const field of
-      categoryFields
+      formCategoryFields
     ) {
       if (
         field.source !==
@@ -942,7 +1028,78 @@ export function ProductFormDialog({
     open,
     product,
     resolvedCategory,
-    categoryFields,
+    formCategoryFields,
+  ]);
+
+  useEffect(() => {
+    if (
+      !open ||
+      resolvedCategory !==
+        "multimedia-frame"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadVehicleCatalog =
+      async () => {
+        setLoadingVehicleCatalog(
+          true
+        );
+
+        try {
+          const response = await fetch(
+            "/api/system-parameters/vehicles",
+            {
+              cache: "no-store",
+            }
+          );
+          const result:
+            ApiResponse<VehicleCatalogResponse> =
+              await response.json();
+
+          if (
+            !response.ok ||
+            !result.success ||
+            !result.data
+          ) {
+            throw new Error(
+              result.message ??
+                "Araç tanımları alınamadı."
+            );
+          }
+
+          if (!cancelled) {
+            setVehicleCatalog(
+              result.data
+            );
+          }
+        } catch (loadError) {
+          if (!cancelled) {
+            setError(
+              loadError instanceof Error
+                ? loadError.message
+                : "Araç tanımları alınamadı."
+            );
+          }
+        } finally {
+          if (!cancelled) {
+            setLoadingVehicleCatalog(
+              false
+            );
+          }
+        }
+      };
+
+    void loadVehicleCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+    resolvedCategory,
   ]);
 
   /*
@@ -1703,12 +1860,23 @@ export function ProductFormDialog({
         return "En az bir tedarikçi seçmelisiniz.";
       }
 
+      if (
+        resolvedCategory ===
+          "multimedia-frame" &&
+        !form.isUniversal &&
+        (!form.vehicleBrandId ||
+          !form.vehicleModelId ||
+          !form.vehicleGenerationId)
+      ) {
+        return "Araç markası, modeli ve kasa/yıl seçimi zorunludur veya Universal seçilmelidir.";
+      }
+
       /*
        * CATEGORY DYNAMIC FIELDS
        */
       for (
         const field of
-        categoryFields
+        formCategoryFields
       ) {
         if (
           !isFieldVisible(
@@ -1901,7 +2069,7 @@ export function ProductFormDialog({
 
       for (
         const field of
-        categoryFields
+        formCategoryFields
       ) {
         /*
          * subCategory ayrı property'de.
@@ -2055,6 +2223,24 @@ export function ProductFormDialog({
 
         category:
           resolvedCategory,
+
+        ...(resolvedCategory ===
+        "multimedia-frame"
+          ? {
+              isUniversal:
+                form.isUniversal,
+              ...(!form.isUniversal
+                ? {
+                    vehicleBrandId:
+                      form.vehicleBrandId,
+                    vehicleModelId:
+                      form.vehicleModelId,
+                    vehicleGenerationId:
+                      form.vehicleGenerationId,
+                  }
+                : {}),
+            }
+          : {}),
 
         suppliers:
           form.suppliers,
@@ -3528,11 +3714,222 @@ export function ProductFormDialog({
             </div>
           </div>
 
+          {resolvedCategory ===
+            "multimedia-frame" && (
+            <div className="space-y-4 border-t pt-5">
+              <div>
+                <h3 className="font-semibold">
+                  Araç Uyumluluğu
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Çerçevenin uyumlu olduğu aracı katalogdan seçin. Tüm araçlara uyumlu ürünlerde Universal seçeneğini kullanın.
+                </p>
+              </div>
+
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3">
+                <Checkbox
+                  checked={
+                    form.isUniversal
+                  }
+                  disabled={submitting}
+                  onCheckedChange={(value) => {
+                    const checked =
+                      value === true;
+
+                    setForm(
+                      (previous) => ({
+                        ...previous,
+                        isUniversal:
+                          checked,
+                        ...(checked
+                          ? {
+                              vehicleBrandId:
+                                "",
+                              vehicleModelId:
+                                "",
+                              vehicleGenerationId:
+                                "",
+                            }
+                          : {}),
+                      })
+                    );
+                  }}
+                />
+                <div>
+                  <div className="text-sm font-medium">
+                    Universal Çerçeve
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    İşaretlenirse araç seçimi zorunlu değildir.
+                  </div>
+                </div>
+              </label>
+
+              {!form.isUniversal && (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>
+                      Araç Markası *
+                    </Label>
+                    <Select
+                      items={vehicleBrands.map(
+                        (brand) => ({
+                          value: brand.id,
+                          label: brand.name,
+                        })
+                      )}
+                      value={
+                        form.vehicleBrandId ||
+                        null
+                      }
+                      onValueChange={(value) => {
+                        setForm(
+                          (previous) => ({
+                            ...previous,
+                            vehicleBrandId:
+                              value ?? "",
+                            vehicleModelId:
+                              "",
+                            vehicleGenerationId:
+                              "",
+                          })
+                        );
+                      }}
+                      disabled={
+                        submitting ||
+                        loadingVehicleCatalog
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue
+                          placeholder={
+                            loadingVehicleCatalog
+                              ? "Yükleniyor..."
+                              : "Marka seçin"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vehicleBrands.map(
+                          (brand) => (
+                            <SelectItem
+                              key={brand.id}
+                              value={brand.id}
+                            >
+                              {brand.name}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>
+                      Araç Modeli *
+                    </Label>
+                    <Select
+                      items={vehicleModels.map(
+                        (model) => ({
+                          value: model.id,
+                          label: model.name,
+                        })
+                      )}
+                      value={
+                        form.vehicleModelId ||
+                        null
+                      }
+                      onValueChange={(value) => {
+                        setForm(
+                          (previous) => ({
+                            ...previous,
+                            vehicleModelId:
+                              value ?? "",
+                            vehicleGenerationId:
+                              "",
+                          })
+                        );
+                      }}
+                      disabled={
+                        submitting ||
+                        !form.vehicleBrandId
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Model seçin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vehicleModels.map(
+                          (model) => (
+                            <SelectItem
+                              key={model.id}
+                              value={model.id}
+                            >
+                              {model.name}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>
+                      Kasa / Yıl *
+                    </Label>
+                    <Select
+                      items={vehicleGenerations.map(
+                        (generation) => ({
+                          value:
+                            generation.id,
+                          label: `${generation.name} · ${generation.startYear}-${generation.endYear}`,
+                        })
+                      )}
+                      value={
+                        form.vehicleGenerationId ||
+                        null
+                      }
+                      onValueChange={(value) => {
+                        setForm(
+                          (previous) => ({
+                            ...previous,
+                            vehicleGenerationId:
+                              value ?? "",
+                          })
+                        );
+                      }}
+                      disabled={
+                        submitting ||
+                        !form.vehicleModelId
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Kasa / yıl seçin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vehicleGenerations.map(
+                          (generation) => (
+                            <SelectItem
+                              key={generation.id}
+                              value={generation.id}
+                            >
+                              {generation.name} · {generation.startYear}-{generation.endYear}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* =================================================
               CATEGORY FIELDS
           ================================================= */}
 
-          {categoryFields.length >
+          {formCategoryFields.length >
             0 && (
             <div className="space-y-4 border-t pt-5">
               <div>
@@ -3551,7 +3948,7 @@ export function ProductFormDialog({
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                {categoryFields.map(
+                {formCategoryFields.map(
                   (
                     field
                   ) =>

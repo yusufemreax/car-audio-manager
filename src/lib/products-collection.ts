@@ -1,5 +1,6 @@
 import type {
   Collection,
+  ObjectId,
   WithId,
 } from "mongodb";
 
@@ -27,6 +28,10 @@ export interface ProductDocument {
   model: string;
   priceUsd: number;
   category: ProductCategory;
+  isUniversal?: boolean;
+  vehicleBrandId?: ObjectId;
+  vehicleModelId?: ObjectId;
+  vehicleGenerationId?: ObjectId;
   subCategory?: string;
   suppliers?: ProductSupplier[];
   sourceUrl?: string;
@@ -75,6 +80,30 @@ export function serializeProduct(
       ) || 0,
     category:
       product.category,
+    ...(typeof product.isUniversal === "boolean"
+      ? {
+          isUniversal:
+            product.isUniversal,
+        }
+      : {}),
+    ...(product.vehicleBrandId
+      ? {
+          vehicleBrandId:
+            product.vehicleBrandId.toString(),
+        }
+      : {}),
+    ...(product.vehicleModelId
+      ? {
+          vehicleModelId:
+            product.vehicleModelId.toString(),
+        }
+      : {}),
+    ...(product.vehicleGenerationId
+      ? {
+          vehicleGenerationId:
+            product.vehicleGenerationId.toString(),
+        }
+      : {}),
     ...(product.subCategory
       ? {
           subCategory:

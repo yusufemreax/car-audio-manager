@@ -5,6 +5,7 @@ import {
 
 import {
   MongoServerError,
+  ObjectId,
 } from "mongodb";
 
 import type {
@@ -35,6 +36,11 @@ import {
 import {
   isProductCategory,
 } from "@/lib/product-config";
+
+import {
+  buildProductVehicleCompatibility,
+  ProductVehicleCompatibilityError,
+} from "@/lib/product-vehicle-compatibility";
 
 import {
   fetchProductSourcePrice,
@@ -78,7 +84,7 @@ export async function GET(
       );
     }
 
-    const products =
+    let products =
       await getProductsWithFreshPrices(
         category &&
         isProductCategory(
@@ -87,6 +93,46 @@ export async function GET(
           ? category
           : undefined
       );
+
+    const compatibleVehicleGenerationId =
+      request.nextUrl.searchParams.get(
+        "compatibleVehicleGenerationId"
+      );
+
+    if (compatibleVehicleGenerationId) {
+      if (
+        category !== "multimedia-frame" ||
+        !ObjectId.isValid(
+          compatibleVehicleGenerationId
+        )
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Çerçeve uyumluluğu için geçerli bir araç kasa/yıl seçimi zorunludur.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const exactProducts =
+        products.filter(
+          (product) =>
+            product.vehicleGenerationId?.toString() ===
+            compatibleVehicleGenerationId
+        );
+
+      products =
+        exactProducts.length > 0
+          ? exactProducts
+          : products.filter(
+              (product) =>
+                product.isUniversal === true
+            );
+    }
 
     return NextResponse.json({
       success: true,
@@ -310,6 +356,12 @@ export async function POST(
     const inventoryCollection =
       await getInventoryCollection();
 
+    const vehicleCompatibility =
+      await buildProductVehicleCompatibility(
+        category,
+        body
+      );
+
     const MAX_CODE_RETRY =
       5;
 
@@ -334,6 +386,22 @@ export async function POST(
           model,
           priceUsd,
           category,
+          ...(vehicleCompatibility.isMultimediaFrame
+            ? {
+                isUniversal:
+                  vehicleCompatibility.isUniversal,
+                ...(!vehicleCompatibility.isUniversal
+                  ? {
+                      vehicleBrandId:
+                        vehicleCompatibility.vehicleBrandId,
+                      vehicleModelId:
+                        vehicleCompatibility.vehicleModelId,
+                      vehicleGenerationId:
+                        vehicleCompatibility.vehicleGenerationId,
+                    }
+                  : {}),
+              }
+            : {}),
           suppliers,
           ...(sourceUrl
             ? {
@@ -362,11 +430,7 @@ export async function POST(
               }
             : {}),
           specifications:
-            body.specifications &&
-            typeof body.specifications ===
-              "object"
-              ? body.specifications
-              : {},
+            vehicleCompatibility.specifications,
           ...(cleanString(
             body.description
           )
@@ -506,6 +570,13 @@ export async function POST(
         error
       );
 
+    const responseStatus =
+      error instanceof ProductVehicleCompatibilityError
+        ? error.status
+        : sourceStatus !== 500
+          ? sourceStatus
+          : 500;
+
     return NextResponse.json(
       {
         success: false,
@@ -516,9 +587,7 @@ export async function POST(
       },
       {
         status:
-          sourceStatus !== 500
-            ? sourceStatus
-            : 500,
+          responseStatus,
       }
     );
   }

@@ -370,7 +370,11 @@ export function MultimediaPreparationPageClient() {
     );
 
   const vehicleBrands =
-    vehicleCatalog?.brands ?? [];
+    useMemo(
+      () =>
+        vehicleCatalog?.brands ?? [],
+      [vehicleCatalog]
+    );
 
   const selectedVehicleBrand =
     useMemo(
@@ -387,7 +391,11 @@ export function MultimediaPreparationPageClient() {
     );
 
   const vehicleModels =
-    selectedVehicleBrand?.models ?? [];
+    useMemo(
+      () =>
+        selectedVehicleBrand?.models ?? [],
+      [selectedVehicleBrand]
+    );
 
   const selectedVehicleModel =
     useMemo(
@@ -404,7 +412,11 @@ export function MultimediaPreparationPageClient() {
     );
 
   const vehicleGenerations =
-    selectedVehicleModel?.generations ?? [];
+    useMemo(
+      () =>
+        selectedVehicleModel?.generations ?? [],
+      [selectedVehicleModel]
+    );
 
   const selectedVehicleGeneration =
     useMemo(
@@ -585,6 +597,17 @@ export function MultimediaPreparationPageClient() {
         return;
       }
 
+      if (
+        slot.category ===
+          "multimedia-frame" &&
+        !selectedVehicleGenerationId
+      ) {
+        setError(
+          "Multimedya çerçevesi seçmeden önce araç marka, model ve kasa/yıl seçmelisiniz."
+        );
+        return;
+      }
+
       setRefreshingProductSlotId(
         slotId
       );
@@ -596,11 +619,25 @@ export function MultimediaPreparationPageClient() {
          * Böylece kullanıcı ürün yönetiminde yeni bir ürün
          * eklediyse sayfayı yenilemeden burada görebilir.
          */
+        const productParams =
+          new URLSearchParams({
+            category:
+              slot.category,
+          });
+
+        if (
+          slot.category ===
+            "multimedia-frame"
+        ) {
+          productParams.set(
+            "compatibleVehicleGenerationId",
+            selectedVehicleGenerationId
+          );
+        }
+
         const response =
           await fetch(
-            `/api/products?category=${encodeURIComponent(
-              slot.category
-            )}`,
+            `/api/products?${productParams.toString()}`,
             {
               cache:
                 "no-store",
@@ -1293,6 +1330,24 @@ export function MultimediaPreparationPageClient() {
      */
     setSuccessMessage(null);
   };
+
+  const clearFrameSelections =
+    () => {
+      setSlots(
+        (previous) =>
+          previous.map(
+            (slot) =>
+              slot.category ===
+                "multimedia-frame" &&
+              slot.product
+                ? {
+                    ...slot,
+                    product: null,
+                  }
+                : slot
+          )
+      );
+    };
 
   /*
    * =======================================================
@@ -2170,6 +2225,7 @@ export function MultimediaPreparationPageClient() {
                 setSelectedVehicleBrandId(value ?? "");
                 setSelectedVehicleModelId("");
                 setSelectedVehicleGenerationId("");
+                clearFrameSelections();
                 setSuccessMessage(null);
               }}
               disabled={loadingVehicleCatalog}
@@ -2195,6 +2251,7 @@ export function MultimediaPreparationPageClient() {
               onValueChange={(value) => {
                 setSelectedVehicleModelId(value ?? "");
                 setSelectedVehicleGenerationId("");
+                clearFrameSelections();
                 setSuccessMessage(null);
               }}
               disabled={!selectedVehicleBrandId}
@@ -2219,6 +2276,7 @@ export function MultimediaPreparationPageClient() {
               value={selectedVehicleGenerationId || null}
               onValueChange={(value) => {
                 setSelectedVehicleGenerationId(value ?? "");
+                clearFrameSelections();
                 setSuccessMessage(null);
               }}
               disabled={!selectedVehicleModelId}

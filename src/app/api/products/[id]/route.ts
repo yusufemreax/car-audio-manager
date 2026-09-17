@@ -20,6 +20,11 @@ import {
 } from "@/lib/product-config";
 
 import {
+  buildProductVehicleCompatibility,
+  ProductVehicleCompatibilityError,
+} from "@/lib/product-vehicle-compatibility";
+
+import {
   getProductsCollection,
   serializeProduct,
 } from "@/lib/products-collection";
@@ -318,6 +323,12 @@ export async function PUT(
     const collection =
       await getProductsCollection();
 
+    const vehicleCompatibility =
+      await buildProductVehicleCompatibility(
+        category,
+        body
+      );
+
     const existing =
       await collection.findOne({
         _id: objectId,
@@ -438,13 +449,25 @@ export async function PUT(
           model,
           priceUsd,
           category,
+          ...(vehicleCompatibility.isMultimediaFrame
+            ? {
+                isUniversal:
+                  vehicleCompatibility.isUniversal,
+                ...(!vehicleCompatibility.isUniversal
+                  ? {
+                      vehicleBrandId:
+                        vehicleCompatibility.vehicleBrandId,
+                      vehicleModelId:
+                        vehicleCompatibility.vehicleModelId,
+                      vehicleGenerationId:
+                        vehicleCompatibility.vehicleGenerationId,
+                    }
+                  : {}),
+              }
+            : {}),
           suppliers,
           specifications:
-            body.specifications &&
-            typeof body.specifications ===
-              "object"
-              ? body.specifications
-              : {},
+            vehicleCompatibility.specifications,
           updatedAt:
             now,
           ...(sourceUrl
@@ -526,6 +549,19 @@ export async function PUT(
                   "",
               }
             : {}),
+          ...(!vehicleCompatibility.isMultimediaFrame ||
+          vehicleCompatibility.isUniversal
+            ? {
+                vehicleBrandId: "",
+                vehicleModelId: "",
+                vehicleGenerationId: "",
+              }
+            : {}),
+          ...(!vehicleCompatibility.isMultimediaFrame
+            ? {
+                isUniversal: "",
+              }
+            : {}),
         },
       }
     );
@@ -564,9 +600,11 @@ export async function PUT(
       },
       {
         status:
-          getProductSourceErrorStatusCode(
-            error
-          ),
+          error instanceof ProductVehicleCompatibilityError
+            ? error.status
+            : getProductSourceErrorStatusCode(
+                error
+              ),
       }
     );
   }

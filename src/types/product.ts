@@ -37,6 +37,10 @@ export interface Product {
   model: string;
   priceUsd: number;
   category: ProductCategory;
+  isUniversal?: boolean;
+  vehicleBrandId?: string;
+  vehicleModelId?: string;
+  vehicleGenerationId?: string;
   subCategory?: string;
   suppliers: ProductSupplier[];
   sourceUrl?: string;
@@ -63,6 +67,10 @@ export type ProductPayload = {
   model: string;
   priceUsd: number;
   category: ProductCategory;
+  isUniversal?: boolean;
+  vehicleBrandId?: string;
+  vehicleModelId?: string;
+  vehicleGenerationId?: string;
   subCategory?: string;
   suppliers: ProductSupplier[];
   sourceUrl?: string;

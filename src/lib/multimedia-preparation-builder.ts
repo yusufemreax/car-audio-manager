@@ -138,6 +138,62 @@ export async function buildMultimediaPreparationData(
       name: autoName,
     });
 
+  const products =
+    await getProductsCollection();
+
+  const frameItems =
+    base.items.filter(
+      (item) =>
+        item.category ===
+          "multimedia-frame" &&
+        Boolean(item.productId)
+    );
+
+  if (frameItems.length > 0) {
+    const exactFrameCount =
+      await products.countDocuments({
+        category:
+          "multimedia-frame",
+        vehicleGenerationId:
+          generationId,
+        isUniversal: {
+          $ne: true,
+        },
+      });
+
+    const selectedFrames =
+      await products
+        .find({
+          _id: {
+            $in: frameItems.map(
+              (item) =>
+                item.productId!
+            ),
+          },
+        })
+        .toArray();
+
+    for (const frame of selectedFrames) {
+      const isCompatible =
+        exactFrameCount > 0
+          ? frame.isUniversal !==
+              true &&
+            frame.vehicleGenerationId?.equals(
+              generationId
+            ) === true
+          : frame.isUniversal ===
+            true;
+
+      if (!isCompatible) {
+        throw new SystemPreparationBuildError(
+          exactFrameCount > 0
+            ? "Seçilen multimedya çerçevesi bu araca uyumlu değil. Araca tanımlı çerçeveyi seçin."
+            : "Bu araç için özel çerçeve bulunamadı. Universal çerçeve seçin."
+        );
+      }
+    }
+  }
+
   const multimediaItem =
     base.items.find(
       (item) =>
@@ -154,9 +210,6 @@ export async function buildMultimediaPreparationData(
   if (multimediaItem?.productId) {
     multimediaProductId =
       multimediaItem.productId;
-
-    const products =
-      await getProductsCollection();
 
     const multimediaProduct =
       await products.findOne({
