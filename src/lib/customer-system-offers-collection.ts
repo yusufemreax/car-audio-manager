@@ -9,10 +9,7 @@ import {
 } from "@/lib/mongodb";
 
 import {
-  SystemPreparation,
-} from "@/types/system-preparation";
-
-import {
+  CustomerOfferSystemSnapshot,
   CustomerSystemOffer,
   CustomerSystemOfferStatus,
   CustomerSystemOfferType,
@@ -28,7 +25,7 @@ export interface CustomerSystemOfferDocument {
   readySystemId: ObjectId;
 
   systemSnapshot:
-    SystemPreparation;
+    CustomerOfferSystemSnapshot;
 
   extraDiscountTry: number;
 

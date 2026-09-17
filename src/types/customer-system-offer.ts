@@ -4,11 +4,19 @@ import {
 
 export type CustomerSystemOfferStatus =
   | "offered"
-  | "sold";
+  | "order_pending"
+  | "installation_pending"
+  | "sold"
+  | "completed";
 
 export type CustomerSystemOfferType =
   | "system"
   | "multimedia";
+
+export type CustomerOfferSystemSnapshot =
+  SystemPreparation & {
+    additionalDescription?: string;
+  };
 
 export interface CustomerSystemOffer {
   id: string;
@@ -22,7 +30,7 @@ export interface CustomerSystemOffer {
   readySystemId: string;
 
   systemSnapshot:
-    SystemPreparation;
+    CustomerOfferSystemSnapshot;
 
   extraDiscountTry: number;
 

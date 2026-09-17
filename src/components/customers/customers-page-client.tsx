@@ -19,6 +19,7 @@ import {
   Loader2,
   MonitorSmartphone,
   PackageCheck,
+  Pencil,
   Plus,
   ShoppingCart,
   Trash2,
@@ -56,8 +57,8 @@ import {
 } from "./customer-system-offer-dialog";
 
 import {
-  CustomerMultimediaOfferDialog,
-} from "./customer-multimedia-offer-dialog";
+  CustomerOfferDiscountDialog,
+} from "./customer-offer-discount-dialog";
 
 import {
   CustomerOfferWorkflowDetailDialog,
@@ -290,14 +291,14 @@ export function CustomersPageClient() {
   ] = useState<CustomerVehicle | null>(null);
 
   const [
-    multimediaOfferCustomer,
-    setMultimediaOfferCustomer,
-  ] = useState<Customer | null>(null);
+    addingMultimediaVehicleKey,
+    setAddingMultimediaVehicleKey,
+  ] = useState<string | null>(null);
 
   const [
-    multimediaOfferVehicle,
-    setMultimediaOfferVehicle,
-  ] = useState<CustomerVehicle | null>(null);
+    discountOffer,
+    setDiscountOffer,
+  ] = useState<CustomerSystemOffer | null>(null);
 
   const [
     creatingPdfId,
@@ -470,6 +471,104 @@ export function CustomersPageClient() {
       },
       []
     );
+
+  const addCompatibleMultimediaOffers =
+    async (
+      customer: Customer,
+      vehicle: CustomerVehicle
+    ) => {
+      if (
+        !vehicle.vehicleGenerationId ||
+        addingMultimediaVehicleKey
+      ) {
+        return;
+      }
+
+      const vehicleKey =
+        `${customer.id}:${vehicle.id}`;
+
+      try {
+        setAddingMultimediaVehicleKey(
+          vehicleKey
+        );
+        setActionError(null);
+        setSuccessMessage(null);
+
+        const refreshParams =
+          new URLSearchParams({
+            status: "ready",
+            vehicleGenerationId:
+              vehicle.vehicleGenerationId,
+          });
+        const refreshResponse =
+          await fetch(
+            `/api/multimedia-preparations?${refreshParams.toString()}`,
+            {
+              cache: "no-store",
+            }
+          );
+        const refreshResult:
+          ApiResponse<unknown[]> =
+            await refreshResponse.json();
+
+        if (
+          !refreshResponse.ok ||
+          !refreshResult.success
+        ) {
+          throw new Error(
+            refreshResult.message ??
+              "Uyumlu hazır multimedyalar güncellenemedi."
+          );
+        }
+
+        const response = await fetch(
+          "/api/customer-system-offers/multimedia-bulk",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              customerId:
+                customer.id,
+              vehicleId:
+                vehicle.id,
+            }),
+          }
+        );
+        const result:
+          ApiResponse<CustomerSystemOffer[]> =
+            await response.json();
+
+        if (
+          !response.ok ||
+          !result.success
+        ) {
+          throw new Error(
+            result.message ??
+              "Multimedya teklifleri eklenemedi."
+          );
+        }
+
+        setSuccessMessage(
+          result.message ??
+            "Uyumlu multimedya teklifleri eklendi."
+        );
+        setWorkflowView("all");
+        await load();
+      } catch (error) {
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Multimedya teklifleri eklenemedi."
+        );
+      } finally {
+        setAddingMultimediaVehicleKey(
+          null
+        );
+      }
+    };
 
   /*
    * =======================================================
@@ -1038,6 +1137,18 @@ export function CustomersPageClient() {
                   .systemSnapshot
                   .name
               }
+              {offer.offerType ===
+                "multimedia" &&
+                offer.systemSnapshot
+                  .additionalDescription && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}·{" "}
+                    {
+                      offer.systemSnapshot
+                        .additionalDescription
+                    }
+                  </span>
+                )}
             </span>
 
             <Badge
@@ -1087,6 +1198,29 @@ export function CustomersPageClient() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {offer.offerType ===
+              "multimedia" &&
+              status ===
+                "offered" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    isProcessing ||
+                    isDeleting
+                  }
+                  onClick={() =>
+                    setDiscountOffer(
+                      offer
+                    )
+                  }
+                >
+                  <Pencil className="size-4" />
+                  Düzenle
+                </Button>
+              )}
+
             <Button
               type="button"
               variant="outline"
@@ -1636,7 +1770,10 @@ export function CustomersPageClient() {
                                         variant="outline"
                                         size="sm"
                                         disabled={
-                                          !vehicle.vehicleGenerationId
+                                          !vehicle.vehicleGenerationId ||
+                                          Boolean(
+                                            addingMultimediaVehicleKey
+                                          )
                                         }
                                         title={
                                           vehicle.vehicleGenerationId
@@ -1644,17 +1781,23 @@ export function CustomersPageClient() {
                                             : "Araç katalog üzerinden eklenmelidir"
                                         }
                                         onClick={() => {
-                                          setMultimediaOfferCustomer(
-                                            customer
-                                          );
-                                          setMultimediaOfferVehicle(
+                                          void addCompatibleMultimediaOffers(
+                                            customer,
                                             vehicle
                                           );
                                         }}
                                       >
-                                        <MonitorSmartphone className="size-4" />
+                                        {addingMultimediaVehicleKey ===
+                                        `${customer.id}:${vehicle.id}` ? (
+                                          <Loader2 className="size-4 animate-spin" />
+                                        ) : (
+                                          <MonitorSmartphone className="size-4" />
+                                        )}
                                         <span className="hidden sm:inline">
-                                          Multimedya Teklifi
+                                          {addingMultimediaVehicleKey ===
+                                          `${customer.id}:${vehicle.id}`
+                                            ? "Ekleniyor..."
+                                            : "Multimedya Teklifi"}
                                         </span>
                                       </Button>
                                     </div>
@@ -1771,38 +1914,19 @@ export function CustomersPageClient() {
         }}
       />
 
-      <CustomerMultimediaOfferDialog
-        open={Boolean(
-          multimediaOfferCustomer &&
-            multimediaOfferVehicle
-        )}
-        customer={
-          multimediaOfferCustomer
-        }
-        vehicle={
-          multimediaOfferVehicle
-        }
+      <CustomerOfferDiscountDialog
+        offer={discountOffer}
         onOpenChange={(open) => {
           if (!open) {
-            setMultimediaOfferCustomer(
-              null
-            );
-            setMultimediaOfferVehicle(
-              null
-            );
+            setDiscountOffer(null);
           }
         }}
-        onSaved={() => {
-          setMultimediaOfferCustomer(
-            null
+        onSaved={(updatedOffer) => {
+          replaceOffer(updatedOffer);
+          setDiscountOffer(null);
+          setSuccessMessage(
+            "Multimedya teklifi indirimi güncellendi."
           );
-          setMultimediaOfferVehicle(
-            null
-          );
-          setWorkflowView(
-            "all"
-          );
-          void load();
         }}
       />
 
