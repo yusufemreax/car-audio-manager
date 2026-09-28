@@ -63,6 +63,9 @@ export interface CustomerOfferOrderSupplierPayment {
   supplier: ProductSupplier;
   paymentMethod: SupplierPurchasePaymentMethod;
   balanceUsedUsd: number;
+  customerCardAmountTry?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
 }
 
 export type CustomerOfferPaymentMethod =

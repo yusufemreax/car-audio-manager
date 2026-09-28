@@ -23,6 +23,7 @@ import {
 
 import {
   addCustomerCardCredit,
+  addCustomerCardSurplus,
   createSupplierOrder,
   deleteSupplierOrder,
   getSupplierBalance,
@@ -88,6 +89,12 @@ interface CustomerOfferOrderSupplierPaymentDocument {
   orderTotalUsd: number;
   balanceUsedUsd: number;
   cardAmountUsd: number;
+  customerCardAmountTry?: number;
+  customerCardChargedUsd?: number;
+  customerCardAppliedUsd?: number;
+  customerCardSurplusUsd?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
 }
 
 interface CustomerSystemOfferDocument {
@@ -1368,7 +1375,9 @@ function getSupplierPaymentMap(
         payment.paymentMethod !==
           "card" &&
         payment.paymentMethod !==
-          "balance"
+          "balance" &&
+        payment.paymentMethod !==
+          "customer_card"
       )
     ) {
       continue;
@@ -1705,6 +1714,80 @@ async function completeOrderAndConsumeStock(
       const paymentMethod =
         payment.paymentMethod;
 
+      const customerCardAmountTry =
+        paymentMethod ===
+          "customer_card"
+          ? safeMoney(
+              payment.customerCardAmountTry
+            )
+          : 0;
+
+      const paymentExchangeRate =
+        paymentMethod ===
+          "customer_card"
+          ? safeMoney(
+              payment.exchangeRate
+            )
+          : 0;
+
+      if (
+        paymentMethod ===
+          "customer_card" &&
+        paymentExchangeRate <= 0
+      ) {
+        throw new CustomerOfferWorkflowError(
+          `${group.supplier} için geçerli kur bilgisi bulunamadı.`,
+          400
+        );
+      }
+
+      if (
+        paymentMethod ===
+          "customer_card" &&
+        customerCardAmountTry <= 0
+      ) {
+        throw new CustomerOfferWorkflowError(
+          `${group.supplier} için müşteri kartından çekilen TL tutarını giriniz.`,
+          400
+        );
+      }
+
+      const customerCardChargedUsd =
+        paymentMethod ===
+          "customer_card"
+          ? safeMoney(
+              customerCardAmountTry /
+                paymentExchangeRate
+            )
+          : 0;
+
+      if (
+        paymentMethod ===
+          "customer_card" &&
+        customerCardChargedUsd <
+          group.totalUsd
+      ) {
+        throw new CustomerOfferWorkflowError(
+          `${group.supplier} müşteri kartı çekimi sipariş toplamını karşılamıyor.`,
+          400
+        );
+      }
+
+      const customerCardAppliedUsd =
+        paymentMethod ===
+          "customer_card"
+          ? group.totalUsd
+          : 0;
+
+      const customerCardSurplusUsd =
+        paymentMethod ===
+          "customer_card"
+          ? safeMoney(
+              customerCardChargedUsd -
+                customerCardAppliedUsd
+            )
+          : 0;
+
       const balanceUsedUsd =
         paymentMethod ===
           "balance"
@@ -1735,10 +1818,13 @@ async function completeOrderAndConsumeStock(
       }
 
       const cardAmountUsd =
-        safeMoney(
-          group.totalUsd -
-            balanceUsedUsd
-        );
+        paymentMethod ===
+          "customer_card"
+          ? 0
+          : safeMoney(
+              group.totalUsd -
+                balanceUsedUsd
+            );
 
       if (
         balanceUsedUsd > 0
@@ -1759,6 +1845,7 @@ async function completeOrderAndConsumeStock(
         }
 
         const balanceMutation =
+          // eslint-disable-next-line react-hooks/rules-of-hooks
           await useSupplierBalanceForStock(
             group.supplier,
             balanceUsedUsd,
@@ -1775,6 +1862,37 @@ async function completeOrderAndConsumeStock(
         );
       }
 
+      if (
+        customerCardSurplusUsd > 0
+      ) {
+        const surplusMutation =
+          await addCustomerCardSurplus(
+            group.supplier,
+            customerCardSurplusUsd,
+            {
+              amountTry:
+                safeMoney(
+                  customerCardSurplusUsd *
+                    paymentExchangeRate
+                ),
+              exchangeRate:
+                paymentExchangeRate,
+              exchangeRateDate:
+                cleanString(
+                  payment.exchangeRateDate
+                ) || undefined,
+              customerOfferId:
+                offer._id.toString(),
+              note:
+                `Müşteri kartı sipariş fazlası: ${offer._id.toString()}`,
+            }
+          );
+
+        balanceMutations.push(
+          surplusMutation
+        );
+      }
+
       orderSupplierPayments.push({
         supplier:
           group.supplier,
@@ -1783,10 +1901,35 @@ async function completeOrderAndConsumeStock(
           group.totalUsd,
         balanceUsedUsd,
         cardAmountUsd,
+        ...(paymentMethod ===
+        "customer_card"
+          ? {
+              customerCardAmountTry,
+              customerCardChargedUsd,
+              customerCardAppliedUsd,
+              customerCardSurplusUsd,
+              exchangeRate:
+                paymentExchangeRate,
+              ...(cleanString(
+                payment.exchangeRateDate
+              )
+                ? {
+                    exchangeRateDate:
+                      cleanString(
+                        payment.exchangeRateDate
+                      ),
+                  }
+                : {}),
+            }
+          : {}),
       });
 
       let remainingBalance =
         balanceUsedUsd;
+      let remainingCustomerCardTry =
+        customerCardAmountTry;
+      let remainingCustomerChargedUsd =
+        customerCardChargedUsd;
 
       for (
         let index = 0;
@@ -1821,15 +1964,72 @@ async function completeOrderAndConsumeStock(
               : 0;
 
         const allocatedCard =
-          safeMoney(
-            item.totalUsd -
-              allocatedBalance
-          );
+          paymentMethod ===
+            "customer_card"
+            ? 0
+            : safeMoney(
+                item.totalUsd -
+                  allocatedBalance
+              );
+
+        const allocatedCustomerCardTry =
+          paymentMethod !==
+            "customer_card"
+            ? 0
+            : isLast
+              ? safeMoney(
+                  remainingCustomerCardTry
+                )
+              : group.totalUsd > 0
+                ? Math.min(
+                    safeMoney(
+                      customerCardAmountTry *
+                        (
+                          item.totalUsd /
+                          group.totalUsd
+                        )
+                    ),
+                    remainingCustomerCardTry
+                  )
+                : 0;
+
+        const allocatedCustomerChargedUsd =
+          paymentMethod !==
+            "customer_card"
+            ? 0
+            : isLast
+              ? safeMoney(
+                  remainingCustomerChargedUsd
+                )
+              : group.totalUsd > 0
+                ? Math.min(
+                    safeMoney(
+                      customerCardChargedUsd *
+                        (
+                          item.totalUsd /
+                          group.totalUsd
+                        )
+                    ),
+                    remainingCustomerChargedUsd
+                  )
+                : 0;
 
         remainingBalance =
           safeMoney(
             remainingBalance -
               allocatedBalance
+          );
+
+        remainingCustomerCardTry =
+          safeMoney(
+            remainingCustomerCardTry -
+              allocatedCustomerCardTry
+          );
+
+        remainingCustomerChargedUsd =
+          safeMoney(
+            remainingCustomerChargedUsd -
+              allocatedCustomerChargedUsd
           );
 
         const supplierOrderId =
@@ -1855,6 +2055,33 @@ async function completeOrderAndConsumeStock(
               allocatedBalance,
             cardAmountUsd:
               allocatedCard,
+            ...(paymentMethod ===
+            "customer_card"
+              ? {
+                  customerCardAmountTry:
+                    allocatedCustomerCardTry,
+                  customerCardChargedUsd:
+                    allocatedCustomerChargedUsd,
+                  customerCardAppliedUsd:
+                    item.totalUsd,
+                  customerCardSurplusUsd:
+                    isLast
+                      ? customerCardSurplusUsd
+                      : 0,
+                  exchangeRate:
+                    paymentExchangeRate,
+                  ...(cleanString(
+                    payment.exchangeRateDate
+                  )
+                    ? {
+                        exchangeRateDate:
+                          cleanString(
+                            payment.exchangeRateDate
+                          ),
+                      }
+                    : {}),
+                }
+              : {}),
             customerOfferId:
               offer._id.toString(),
             note:
