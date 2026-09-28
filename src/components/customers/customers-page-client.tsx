@@ -21,10 +21,12 @@ import {
   PackageCheck,
   Pencil,
   Plus,
+  Search,
   ShoppingCart,
   Trash2,
   UserRound,
   Wrench,
+  X,
 } from "lucide-react";
 
 import {
@@ -82,6 +84,10 @@ import {
 import {
   Button,
 } from "@/components/ui/button";
+
+import {
+  Input,
+} from "@/components/ui/input";
 
 import {
   createCustomerOfferJpg,
@@ -251,6 +257,17 @@ function getViewTitle(
   }
 }
 
+function normalizeCustomerSearch(
+  value: string
+) {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase(
+      "tr-TR"
+    );
+}
+
 export function CustomersPageClient() {
   useCustomerOfferStockDecisionInterceptor();
   const [
@@ -269,6 +286,11 @@ export function CustomersPageClient() {
   ] = useState<WorkflowView>(
     "all"
   );
+
+  const [
+    customerSearch,
+    setCustomerSearch,
+  ] = useState("");
 
   const [
     customerDialog,
@@ -1051,22 +1073,35 @@ export function CustomersPageClient() {
 
   const visibleCustomers =
     useMemo(() => {
-      if (
+      const workflowCustomers =
         workflowView ===
         "all"
-      ) {
-        return customers;
+          ? customers
+          : customers.filter(
+              (customer) =>
+                visibleOffers.some(
+                  (offer) =>
+                    offer.customerId ===
+                    customer.id
+                )
+            );
+      const query =
+        normalizeCustomerSearch(
+          customerSearch
+        );
+
+      if (!query) {
+        return workflowCustomers;
       }
 
-      return customers.filter(
+      return workflowCustomers.filter(
         (customer) =>
-          visibleOffers.some(
-            (offer) =>
-              offer.customerId ===
-              customer.id
-          )
+          normalizeCustomerSearch(
+            customer.name
+          ).includes(query)
       );
     }, [
+      customerSearch,
       customers,
       visibleOffers,
       workflowView,
@@ -1431,6 +1466,50 @@ export function CustomersPageClient() {
         </div>
 
         {/* ===================================================
+            CUSTOMER SEARCH
+        =================================================== */}
+
+        <div className="flex flex-col gap-2 rounded-2xl border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+
+            <Input
+              type="search"
+              value={customerSearch}
+              onChange={(event) =>
+                setCustomerSearch(
+                  event.target.value
+                )
+              }
+              placeholder="Müşteri adı ara..."
+              aria-label="Müşteri adı ara"
+              className="pl-9 pr-10"
+            />
+
+            {customerSearch && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                aria-label="Müşteri aramasını temizle"
+                onClick={() =>
+                  setCustomerSearch("")
+                }
+              >
+                <X className="size-4" />
+              </Button>
+            )}
+          </div>
+
+          <div className="shrink-0 text-sm text-muted-foreground">
+            {customerSearch.trim()
+              ? `${visibleCustomers.length} müşteri bulundu`
+              : `${visibleCustomers.length} müşteri`}
+          </div>
+        </div>
+
+        {/* ===================================================
             WORKFLOW STAGES
         =================================================== */}
 
@@ -1525,7 +1604,9 @@ export function CustomersPageClient() {
         {visibleCustomers.length ===
         0 ? (
           <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-            Bu adımda gösterilecek teklif bulunmuyor.
+            {customerSearch.trim()
+              ? `“${customerSearch.trim()}” adına uygun müşteri bulunamadı.`
+              : "Bu adımda gösterilecek teklif bulunmuyor."}
           </div>
         ) : (
           <Accordion
