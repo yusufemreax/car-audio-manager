@@ -258,6 +258,52 @@ export function CustomerOfferPaymentDialog({
       ) || 0
     );
 
+  const previousCustomerCardAmountTry =
+    useMemo(
+      () =>
+        roundMoney(
+          (
+            offer?.orderSupplierPayments ??
+            []
+          )
+            .filter(
+              (payment) =>
+                payment.paymentMethod ===
+                  "customer_card" &&
+                (
+                  !payment.customerOfferId ||
+                  payment.customerOfferId ===
+                    offer?.id
+                )
+            )
+            .reduce(
+              (
+                total,
+                payment
+              ) =>
+                total +
+                Math.max(
+                  0,
+                  Number(
+                    payment.customerCardAmountTry ??
+                      0
+                  ) || 0
+                ),
+              0
+            )
+        ),
+      [
+        offer?.id,
+        offer?.orderSupplierPayments,
+      ]
+    );
+
+  const previousCardAppliedTry =
+    Math.min(
+      totalTry,
+      previousCustomerCardAmountTry
+    );
+
   const cardTryNumber =
     Math.max(
       0,
@@ -302,20 +348,24 @@ export function CustomerOfferPaymentDialog({
   useEffect(() => {
     if (
       !open ||
-      !offer
+      !offer?.id
     ) {
       return;
     }
 
     setPaymentMethod(
-      "cash"
+      previousCardAppliedTry > 0
+        ? "prepaid_card"
+        : "cash"
     );
     setSupplier(
       "EGB"
     );
     setCardAmountTry(
       roundMoney(
-        totalTry
+        previousCardAppliedTry > 0
+          ? previousCardAppliedTry
+          : totalTry
       ).toFixed(2)
     );
     setCardAmountUsd("");
@@ -425,6 +475,7 @@ export function CustomerOfferPaymentDialog({
     open,
     offer?.id,
     totalTry,
+    previousCardAppliedTry,
   ]);
 
   const handleCardTryChange =
@@ -665,7 +716,13 @@ export function CustomerOfferPaymentDialog({
                     value
                   );
                   if (value === "prepaid_card") {
-                    setCardAmountTry("");
+                    setCardAmountTry(
+                      previousCardAppliedTry > 0
+                        ? roundMoney(
+                            previousCardAppliedTry
+                          ).toFixed(2)
+                        : ""
+                    );
                     setCardAmountUsd("");
                   } else if (value === "card" && !cardAmountTry) {
                     setCardAmountTry(roundMoney(totalTry).toFixed(2));
@@ -896,7 +953,11 @@ export function CustomerOfferPaymentDialog({
                 Önceden Çekilen Kart
               </div>
               <p className="text-xs leading-5 text-muted-foreground">
-                Montajdan önce müşteriden çekilmiş kart tutarını girin. Bu işlem tedarikçi bakiyesine yeniden para eklemez; yalnızca müşteri tahsilat dağılımını kaydeder.
+                {previousCustomerCardAmountTry > 0
+                  ? `Sipariş sırasında çekilen ${formatTry(
+                      previousCustomerCardAmountTry
+                    )} otomatik getirildi. Bu işlem tedarikçi bakiyesine yeniden para eklemez.`
+                  : "Montajdan önce müşteriden çekilmiş kart tutarını girin. Bu işlem tedarikçi bakiyesine yeniden para eklemez; yalnızca müşteri tahsilat dağılımını kaydeder."}
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">

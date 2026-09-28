@@ -73,17 +73,19 @@ interface OfferSnapshotDocument {
 }
 
 interface CustomerOfferPaymentDocument {
-  method: "cash" | "card";
+  method: "cash" | "card" | "prepaid_card";
   supplier?: ProductSupplier;
   cardAmountTry: number;
   cardAmountUsd: number;
   cashAmountTry: number;
+  shippingFeeTry?: number;
   exchangeRate?: number;
   exchangeRateDate?: string;
   completedAt: Date;
 }
 
 interface CustomerOfferOrderSupplierPaymentDocument {
+  customerOfferId: string;
   supplier: ProductSupplier;
   paymentMethod: SupplierPurchasePaymentMethod;
   orderTotalUsd: number;
@@ -1894,6 +1896,8 @@ async function completeOrderAndConsumeStock(
       }
 
       orderSupplierPayments.push({
+        customerOfferId:
+          offer._id.toString(),
         supplier:
           group.supplier,
         paymentMethod,
@@ -2261,6 +2265,61 @@ function buildCustomerPayment(
         0,
       cashAmountTry:
         totalTry,
+      shippingFeeTry:
+        safeMoney(
+          payment.shippingFeeTry
+        ),
+      completedAt:
+        now,
+    };
+  }
+
+  const cardAmountTry =
+    safeMoney(
+      payment.cardAmountTry
+    );
+
+  if (
+    cardAmountTry <= 0
+  ) {
+    throw new CustomerOfferWorkflowError(
+      "Karttan çekilen TL tutarı 0'dan büyük olmalıdır.",
+      400
+    );
+  }
+
+  if (
+    cardAmountTry >
+    totalTry
+  ) {
+    throw new CustomerOfferWorkflowError(
+      "Kart tutarı teklif müşteri tutarından büyük olamaz.",
+      400
+    );
+  }
+
+  if (
+    payment.method ===
+    "prepaid_card"
+  ) {
+    return {
+      method:
+        "prepaid_card",
+      cardAmountTry,
+      cardAmountUsd:
+        0,
+      cashAmountTry:
+        roundMoney(
+          Math.max(
+            totalTry -
+              cardAmountTry,
+            0
+          )
+        ),
+      shippingFeeTry:
+        safeMoney(
+          payment.shippingFeeTry
+        ),
       completedAt:
         now,
     };
@@ -2287,34 +2346,10 @@ function buildCustomerPayment(
     );
   }
 
-  const cardAmountTry =
-    safeMoney(
-      payment.cardAmountTry
-    );
-
   const cardAmountUsd =
     safeMoney(
       payment.cardAmountUsd
     );
-
-  if (
-    cardAmountTry <= 0
-  ) {
-    throw new CustomerOfferWorkflowError(
-      "Karttan çekilecek TL tutarı 0'dan büyük olmalıdır.",
-      400
-    );
-  }
-
-  if (
-    cardAmountTry >
-    totalTry
-  ) {
-    throw new CustomerOfferWorkflowError(
-      "Kart tutarı teklif müşteri tutarından büyük olamaz.",
-      400
-    );
-  }
 
   if (
     cardAmountUsd <= 0
@@ -2349,6 +2384,10 @@ function buildCustomerPayment(
             cardAmountTry,
           0
         )
+      ),
+    shippingFeeTry:
+      safeMoney(
+        payment.shippingFeeTry
       ),
     ...(exchangeRate > 0
       ? {

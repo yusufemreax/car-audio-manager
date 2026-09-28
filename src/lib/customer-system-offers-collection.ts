@@ -10,6 +10,7 @@ import {
 
 import {
   CustomerOfferSystemSnapshot,
+  CustomerOfferOrderSupplierPaymentRecord,
   CustomerSystemOffer,
   CustomerSystemOfferStatus,
   CustomerSystemOfferType,
@@ -41,6 +42,9 @@ export interface CustomerSystemOfferDocument {
   updatedAt: Date;
 
   soldAt?: Date;
+
+  orderSupplierPayments?:
+    CustomerOfferOrderSupplierPaymentRecord[];
 }
 
 let indexesReady:
@@ -133,5 +137,8 @@ export function serializeCustomerSystemOffer(
 
     soldAt:
       document.soldAt?.toISOString(),
+
+    orderSupplierPayments:
+      document.orderSupplierPayments,
   };
 }
