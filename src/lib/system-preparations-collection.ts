@@ -18,6 +18,10 @@ import {
   SystemPreparationStatus,
 } from "@/types/system-preparation";
 
+import type {
+  ProductSupplier,
+} from "@/types/supplier";
+
 import {
   getDatabase,
 } from "@/lib/mongodb";
@@ -41,6 +45,7 @@ export interface SystemPreparationItemDocument {
   brand?: string;
   model?: string;
   imageUrl?: string;
+  supplier?: ProductSupplier;
   specifications?: Record<
     string,
     string | number | boolean
@@ -260,6 +265,12 @@ export function serializeSystemPreparation(
             ? {
                 imageUrl:
                   item.imageUrl,
+              }
+            : {}),
+          ...(item.supplier
+            ? {
+                supplier:
+                  item.supplier,
               }
             : {}),
           ...(item.specifications

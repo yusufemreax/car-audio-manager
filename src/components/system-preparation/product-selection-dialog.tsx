@@ -18,6 +18,10 @@ import {
   ProductCategory,
 } from "@/types/product";
 
+import type {
+  ProductSupplier,
+} from "@/types/supplier";
+
 import {
   ProductFieldDefinition,
   productCategoryDefinitions,
@@ -87,10 +91,14 @@ interface ProductSelectionDialogProps {
 
   selectedProductId?: string;
 
+  selectedSupplier?: ProductSupplier;
+
   onSelect:
     (
       product:
-        Product
+        Product,
+      supplier: ProductSupplier,
+      priceUsd: number
     ) => void;
 
   onClear?: () => void;
@@ -669,6 +677,7 @@ export function ProductSelectionDialog({
   requiredQuantity,
   exchangeRate,
   selectedProductId,
+  selectedSupplier,
   onSelect,
   onClear,
 }: ProductSelectionDialogProps) {
@@ -1196,6 +1205,39 @@ export function ProductSelectionDialog({
       exchangeRate,
     ]);
 
+  const selectionRows =
+    useMemo(
+      () =>
+        filteredProducts.flatMap(
+          (product) => {
+            const prices =
+              product.supplierPrices?.length
+                ? product.supplierPrices
+                : (product.suppliers?.length
+                    ? product.suppliers
+                    : ["EGB" as const]
+                  ).map((supplier) => ({
+                    supplier,
+                    priceUsd:
+                      product.priceUsd,
+                    sourceUnavailable:
+                      product.sourceUnavailable,
+                  }));
+
+            return prices.map((item) => ({
+              product,
+              supplier:
+                item.supplier,
+              priceUsd:
+                Number(item.priceUsd) || 0,
+              sourceUnavailable:
+                item.sourceUnavailable === true,
+            }));
+          }
+        ),
+      [filteredProducts]
+    );
+
   /*
    * =======================================================
    * SELECT PRODUCT
@@ -1205,17 +1247,14 @@ export function ProductSelectionDialog({
   const handleSelect =
     (
       product:
-        Product
+        Product,
+      supplier: ProductSupplier,
+      priceUsd: number
     ) => {
-      if (
-        product.sourceUnavailable ===
-        true
-      ) {
-        return;
-      }
-
       onSelect(
-        product
+        product,
+        supplier,
+        priceUsd
       );
 
       onOpenChange(
@@ -1508,6 +1547,10 @@ export function ProductSelectionDialog({
                     </div>
                   </TableHead>
 
+                  <TableHead className="min-w-28">
+                    Tedarikçi
+                  </TableHead>
+
                   {/* DYNAMIC FIELDS */}
 
                   {tableFields.map(
@@ -1641,12 +1684,12 @@ export function ProductSelectionDialog({
               ============================================= */}
 
               <TableBody>
-                {filteredProducts.length ===
+                {selectionRows.length ===
                 0 ? (
                   <TableRow>
                     <TableCell
                       colSpan={
-                        6 +
+                        7 +
                         tableFields.length
                       }
                       className="h-52 text-center"
@@ -1684,26 +1727,32 @@ export function ProductSelectionDialog({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredProducts.map(
+                  selectionRows.map(
                     (
-                      product
+                      row
                     ) => {
+                      const {
+                        product,
+                        supplier,
+                        priceUsd,
+                      } = row;
                       const selected =
                         product.id ===
-                        selectedProductId;
+                          selectedProductId &&
+                        supplier ===
+                          selectedSupplier;
 
                       const unavailable =
-                        product.sourceUnavailable ===
-                        true;
+                        row.sourceUnavailable === true;
 
                       const tryPrice =
-                        product.priceUsd *
+                        priceUsd *
                         exchangeRate;
 
                       return (
                         <TableRow
                           key={
-                            product.id
+                            `${product.id}-${supplier}`
                           }
                           className={
                             unavailable
@@ -1759,6 +1808,10 @@ export function ProductSelectionDialog({
                             ) : null}
                           </TableCell>
 
+                          <TableCell className="h-13 whitespace-nowrap font-medium">
+                            {supplier}
+                          </TableCell>
+
                           {/* DYNAMIC */}
 
                           {tableFields.map(
@@ -1783,7 +1836,7 @@ export function ProductSelectionDialog({
 
                           <TableCell className="h-13 whitespace-nowrap text-right font-medium tabular-nums">
                             {formatUsd(
-                              product.priceUsd
+                              priceUsd
                             )}
                           </TableCell>
 
@@ -1828,7 +1881,9 @@ export function ProductSelectionDialog({
                               }
                               onClick={() =>
                                 handleSelect(
-                                  product
+                                  product,
+                                  supplier,
+                                  priceUsd
                                 )
                               }
                             >

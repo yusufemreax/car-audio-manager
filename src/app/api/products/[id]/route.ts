@@ -38,15 +38,12 @@ import {
 } from "@/lib/products-service";
 
 import {
-  refreshProductPriceIfNeeded,
-} from "@/lib/product-price-refresh";
+  getProductSourceErrorStatusCode,
+} from "@/lib/scraping/product-source-price";
 
 import {
-  fetchProductSourcePrice,
-  getProductSourceErrorStatusCode,
-  isSupportedProductSourceUrl,
-  roundCurrency,
-} from "@/lib/scraping/product-source-price";
+  resolveProductSupplierPrices,
+} from "@/lib/product-supplier-prices";
 
 interface RouteContext {
   params:
@@ -257,24 +254,6 @@ export async function PUT(
       );
     }
 
-    if (
-      sourceUrl &&
-      !isSupportedProductSourceUrl(
-        sourceUrl
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Ürün linki b2begb.com veya ozdemirelektronik.com alan adına ait olmalıdır.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
     const imageUrl =
       cleanString(
         body.imageUrl
@@ -349,86 +328,19 @@ export async function PUT(
 
     const now =
       new Date();
-    const existingSourceUrl =
-      cleanString(
-        existing.sourceUrl
+    const supplierPrices =
+      await resolveProductSupplierPrices(
+        body.supplierPrices,
+        suppliers,
+        body.priceUsd,
+        sourceUrl
       );
-
-    let priceUsd =
-      Number(
-        body.priceUsd
-      );
-    let sourceUnavailable:
-      boolean | undefined;
-    let priceCheckedAt:
-      Date | undefined;
-    let priceRefreshAttemptedAt:
-      Date | undefined;
-    let sourceAvailabilityCheckedAt:
-      Date | undefined;
-
-    if (sourceUrl) {
-      if (
-        sourceUrl ===
-        existingSourceUrl
-      ) {
-        const refreshed =
-          await refreshProductPriceIfNeeded(
-            existing
-          );
-
-        priceUsd =
-          roundCurrency(
-            Number(
-              refreshed.priceUsd
-            ) || 0
-          );
-        sourceUnavailable =
-          refreshed.sourceUnavailable;
-        priceCheckedAt =
-          refreshed.priceCheckedAt;
-        priceRefreshAttemptedAt =
-          refreshed.priceRefreshAttemptedAt;
-        sourceAvailabilityCheckedAt =
-          refreshed.sourceAvailabilityCheckedAt;
-      } else {
-        const remote =
-          await fetchProductSourcePrice(
-            sourceUrl
-          );
-
-        priceUsd =
-          roundCurrency(
-            remote.priceUsd
-          );
-        sourceUnavailable =
-          false;
-        priceCheckedAt =
-          now;
-        priceRefreshAttemptedAt =
-          now;
-        sourceAvailabilityCheckedAt =
-          now;
-      }
-    }
-
-    if (
-      !Number.isFinite(
-        priceUsd
-      ) ||
-      priceUsd < 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "USD fiyatı 0 veya daha büyük olmalıdır.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
+    const primarySupplierPrice =
+      supplierPrices[0];
+    const priceUsd =
+      primarySupplierPrice.priceUsd;
+    const primarySourceUrl =
+      primarySupplierPrice.sourceUrl ?? "";
 
     const subCategory =
       cleanString(
@@ -466,34 +378,23 @@ export async function PUT(
               }
             : {}),
           suppliers,
+          supplierPrices,
           specifications:
             vehicleCompatibility.specifications,
           updatedAt:
             now,
-          ...(sourceUrl
+          ...(primarySourceUrl
             ? {
-                sourceUrl,
-                ...(priceCheckedAt
-                  ? {
-                      priceCheckedAt,
-                    }
-                  : {}),
-                ...(priceRefreshAttemptedAt
-                  ? {
-                      priceRefreshAttemptedAt,
-                    }
-                  : {}),
-                ...(typeof sourceUnavailable ===
-                "boolean"
-                  ? {
-                      sourceUnavailable,
-                    }
-                  : {}),
-                ...(sourceAvailabilityCheckedAt
-                  ? {
-                      sourceAvailabilityCheckedAt,
-                    }
-                  : {}),
+                sourceUrl:
+                  primarySourceUrl,
+                priceCheckedAt:
+                  primarySupplierPrice.priceCheckedAt ?? now,
+                priceRefreshAttemptedAt:
+                  primarySupplierPrice.priceCheckedAt ?? now,
+                sourceUnavailable:
+                  false,
+                sourceAvailabilityCheckedAt:
+                  primarySupplierPrice.priceCheckedAt ?? now,
               }
             : {}),
           ...(subCategory
@@ -515,7 +416,7 @@ export async function PUT(
             : {}),
         },
         $unset: {
-          ...(!sourceUrl
+          ...(!primarySourceUrl
             ? {
                 sourceUrl: "",
                 priceCheckedAt:

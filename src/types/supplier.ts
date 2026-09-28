@@ -13,6 +13,14 @@ export const DEFAULT_PRODUCT_SUPPLIERS: ProductSupplier[] = [
   "EGB",
 ];
 
+export interface ProductSupplierPrice {
+  supplier: ProductSupplier;
+  priceUsd: number;
+  sourceUrl?: string;
+  priceCheckedAt?: string;
+  sourceUnavailable?: boolean;
+}
+
 export function isProductSupplier(
   value: unknown
 ): value is ProductSupplier {

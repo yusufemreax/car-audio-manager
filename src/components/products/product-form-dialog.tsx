@@ -177,6 +177,12 @@ interface ProductFormState {
 
   suppliers: ProductSupplier[];
 
+  supplierPrices: Array<{
+    supplier: ProductSupplier;
+    priceUsd: string;
+    sourceUrl?: string;
+  }>;
+
   sourceUrl: string;
 
   specifications: Record<
@@ -209,6 +215,12 @@ function createEmptyForm(): ProductFormState {
     priceUsd: "",
     subCategory: "",
     suppliers: ["EGB"],
+    supplierPrices: [
+      {
+        supplier: "EGB",
+        priceUsd: "",
+      },
+    ],
     sourceUrl: "",
     specifications: {},
     description: "",
@@ -233,6 +245,20 @@ function formatTry(
     {
       style: "currency",
       currency: "TRY",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }
+  ).format(value);
+}
+
+function formatUsd(
+  value: number
+) {
+  return new Intl.NumberFormat(
+    "en-US",
+    {
+      style: "currency",
+      currency: "USD",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }
@@ -894,6 +920,37 @@ export function ProductFormDialog({
             ? product.suppliers
             : ["EGB"],
 
+        supplierPrices:
+          product.supplierPrices?.length
+            ? product.supplierPrices.map(
+                (item) => ({
+                  supplier:
+                    item.supplier,
+                  priceUsd:
+                    String(item.priceUsd),
+                  ...(item.sourceUrl
+                    ? {
+                        sourceUrl:
+                          item.sourceUrl,
+                      }
+                    : {}),
+                })
+              )
+            : (product.suppliers?.length
+                ? product.suppliers
+                : (["EGB"] as ProductSupplier[])
+              ).map((supplier, index) => ({
+                supplier,
+                priceUsd:
+                  String(product.priceUsd),
+                ...(index === 0 && product.sourceUrl
+                  ? {
+                      sourceUrl:
+                        product.sourceUrl,
+                    }
+                  : {}),
+              })),
+
         sourceUrl:
           product.sourceUrl ??
           "",
@@ -1239,6 +1296,20 @@ export function ProductFormDialog({
                   priceUsd:
                     String(
                       result.data!.priceUsd
+                    ),
+                  supplierPrices:
+                    previous.supplierPrices.map(
+                      (item, index) =>
+                        index === 0
+                          ? {
+                              ...item,
+                              sourceUrl,
+                              priceUsd:
+                                String(
+                                  result.data!.priceUsd
+                                ),
+                            }
+                          : item
                     ),
                 };
               }
@@ -1860,6 +1931,48 @@ export function ProductFormDialog({
         return "En az bir tedarikçi seçmelisiniz.";
       }
 
+      for (
+        let index = 0;
+        index < form.suppliers.length;
+        index++
+      ) {
+        const supplier =
+          form.suppliers[index];
+        const row =
+          form.supplierPrices.find(
+            (item) =>
+              item.supplier === supplier
+          );
+        const supplierPrice = Number(
+          index === 0
+            ? form.priceUsd
+            : row?.priceUsd
+        );
+
+        if (
+          !Number.isFinite(supplierPrice) ||
+          supplierPrice < 0
+        ) {
+          return `${supplier} için geçerli bir USD fiyatı girin.`;
+        }
+
+        const supplierUrl =
+          (index === 0
+            ? form.sourceUrl
+            : row?.sourceUrl ?? ""
+          ).trim();
+
+        if (
+          supplierUrl &&
+          supplier !== "Diğer" &&
+          !isSupportedSourceUrl(
+            supplierUrl
+          )
+        ) {
+          return `${supplier} için desteklenen bir ürün linki girin.`;
+        }
+      }
+
       if (
         resolvedCategory ===
           "multimedia-frame" &&
@@ -2045,6 +2158,96 @@ export function ProductFormDialog({
       }
 
       return null;
+    };
+
+  const refreshAdditionalSupplierPrice =
+    async (supplier: ProductSupplier) => {
+      const row =
+        form.supplierPrices.find(
+          (item) =>
+            item.supplier === supplier
+        );
+      const sourceUrl =
+        row?.sourceUrl?.trim() ?? "";
+
+      if (!sourceUrl) {
+        return;
+      }
+
+      if (
+        supplier !== "Diğer" &&
+        !isSupportedSourceUrl(sourceUrl)
+      ) {
+        setSourcePriceError(
+          `${supplier} için desteklenen bir ürün linki girin.`
+        );
+        return;
+      }
+
+      if (supplier === "Diğer" &&
+          !isSupportedSourceUrl(sourceUrl)) {
+        return;
+      }
+
+      setLoadingSourcePrice(true);
+      setSourcePriceError(null);
+
+      try {
+        const response = await fetch(
+          "/api/scraping/products/price",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              url: sourceUrl,
+            }),
+            cache: "no-store",
+          }
+        );
+        const result:
+          SourcePriceResponse =
+            await response.json();
+
+        if (
+          !response.ok ||
+          !result.success ||
+          !result.data
+        ) {
+          throw new Error(
+            result.message ??
+              "Ürün fiyatı linkten alınamadı."
+          );
+        }
+
+        setForm((previous) => ({
+          ...previous,
+          supplierPrices:
+            previous.supplierPrices.map(
+              (item) =>
+                item.supplier === supplier &&
+                item.sourceUrl?.trim() === sourceUrl
+                  ? {
+                      ...item,
+                      priceUsd:
+                        String(
+                          result.data!.priceUsd
+                        ),
+                    }
+                  : item
+            ),
+        }));
+      } catch (refreshError) {
+        setSourcePriceError(
+          refreshError instanceof Error
+            ? refreshError.message
+            : "Ürün fiyatı linkten alınamadı."
+        );
+      } finally {
+        setLoadingSourcePrice(false);
+      }
     };
 
   /*
@@ -2244,6 +2447,37 @@ export function ProductFormDialog({
 
         suppliers:
           form.suppliers,
+
+        supplierPrices:
+          form.suppliers.map(
+            (supplier, index) => {
+              const row =
+                form.supplierPrices.find(
+                  (item) =>
+                    item.supplier === supplier
+                );
+
+              return {
+                supplier,
+                priceUsd:
+                  Number(
+                    index === 0
+                      ? form.priceUsd
+                      : row?.priceUsd
+                  ),
+                ...((index === 0
+                  ? form.sourceUrl.trim()
+                  : row?.sourceUrl?.trim())
+                  ? {
+                      sourceUrl:
+                        index === 0
+                          ? form.sourceUrl.trim()
+                          : row!.sourceUrl!.trim(),
+                    }
+                  : {}),
+              };
+            }
+          ),
 
         sourceUrl:
           form.sourceUrl.trim(),
@@ -3458,7 +3692,7 @@ export function ProductFormDialog({
 
             <div className="space-y-2">
               <Label htmlFor="priceUsd">
-                Fiyat (USD) *
+                {form.suppliers[0] ?? "Tedarikçi"} Fiyatı (USD) *
               </Label>
 
               <div className="relative">
@@ -3509,6 +3743,17 @@ export function ProductFormDialog({
                           event
                             .target
                             .value,
+                        supplierPrices:
+                          previous.supplierPrices.map(
+                            (item) =>
+                              item.supplier === previous.suppliers[0]
+                                ? {
+                                    ...item,
+                                    priceUsd:
+                                      event.target.value,
+                                  }
+                                : item
+                          ),
                       })
                     );
                   }}
@@ -3594,7 +3839,7 @@ export function ProductFormDialog({
 
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="sourceUrl">
-                Ürün Linki
+                {form.suppliers[0] ?? "Tedarikçi"} Ürün Linki
               </Label>
 
               <Input
@@ -3622,6 +3867,24 @@ export function ProductFormDialog({
 
                       sourceUrl:
                         nextSourceUrl,
+
+                      supplierPrices:
+                        previous.supplierPrices.map(
+                          (item) =>
+                            item.supplier === previous.suppliers[0]
+                              ? {
+                                  ...item,
+                                  sourceUrl:
+                                    nextSourceUrl,
+                                  priceUsd:
+                                    nextSourceUrl.trim()
+                                      ? ""
+                                      : product
+                                        ? String(product.priceUsd)
+                                        : "",
+                                }
+                              : item
+                        ),
 
                       /*
                        * Link doluysa eski/manual fiyatı göstermeyelim.
@@ -3690,10 +3953,46 @@ export function ProductFormDialog({
                                         supplier
                                     );
 
+                              const nextSupplierPrices =
+                                value
+                                  ? previous.supplierPrices.some(
+                                      (item) =>
+                                        item.supplier === supplier
+                                    )
+                                    ? previous.supplierPrices
+                                    : [
+                                        ...previous.supplierPrices,
+                                        {
+                                          supplier,
+                                          priceUsd: "",
+                                          sourceUrl: "",
+                                        },
+                                      ]
+                                  : previous.supplierPrices.filter(
+                                      (item) =>
+                                        item.supplier !== supplier
+                                    );
+                              const nextPrimary =
+                                nextSupplierPrices.find(
+                                  (item) =>
+                                    item.supplier === next[0]
+                                );
+
                               return {
                                 ...previous,
                                 suppliers:
                                   next,
+                                supplierPrices:
+                                  nextSupplierPrices,
+                                ...(previous.suppliers[0] === supplier &&
+                                !value
+                                  ? {
+                                      priceUsd:
+                                        nextPrimary?.priceUsd ?? "",
+                                      sourceUrl:
+                                        nextPrimary?.sourceUrl ?? "",
+                                    }
+                                  : {}),
                               };
                             });
                           }}
@@ -3712,6 +4011,127 @@ export function ProductFormDialog({
                 Ürün birden fazla tedarikçiden temin edilebiliyorsa birden fazla seçim yapabilirsiniz. Yeni ürünlerde varsayılan EGB&apos;dir.
               </p>
             </div>
+
+            {form.suppliers.slice(1).map((supplier) => {
+              const row =
+                form.supplierPrices.find(
+                  (item) =>
+                    item.supplier === supplier
+                );
+              const sourceUrl =
+                row?.sourceUrl ?? "";
+
+              return (
+                <div
+                  key={supplier}
+                  className="space-y-4 rounded-xl border bg-muted/10 p-4 sm:col-span-2"
+                >
+                  <div>
+                    <div className="font-medium">
+                      {supplier} fiyat bilgisi
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Bu tedarikçiye ait link ve fiyat ayrı saklanır.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`supplier-url-${supplier}`}>
+                        Ürün Linki
+                      </Label>
+                      <Input
+                        id={`supplier-url-${supplier}`}
+                        type="url"
+                        value={sourceUrl}
+                        disabled={submitting}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setSourcePriceError(null);
+                          setForm((previous) => ({
+                            ...previous,
+                            supplierPrices:
+                              previous.supplierPrices.map(
+                                (item) =>
+                                  item.supplier === supplier
+                                    ? {
+                                        ...item,
+                                        sourceUrl: value,
+                                        ...(value.trim()
+                                          ? {
+                                              priceUsd: "",
+                                            }
+                                          : {}),
+                                      }
+                                    : item
+                              ),
+                          }));
+                        }}
+                        onBlur={() => {
+                          void refreshAdditionalSupplierPrice(
+                            supplier
+                          );
+                        }}
+                        placeholder={
+                          supplier === "Diğer"
+                            ? "Tedarikçi ürün linki"
+                            : supplier === "EGB"
+                              ? "https://www.b2begb.com/..."
+                              : "https://ozdemirelektronik.com/..."
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor={`supplier-price-${supplier}`}>
+                        Fiyat (USD) *
+                      </Label>
+                      <Input
+                        id={`supplier-price-${supplier}`}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={row?.priceUsd ?? ""}
+                        disabled={submitting}
+                        readOnly={
+                          Boolean(sourceUrl.trim()) &&
+                          supplier !== "Diğer"
+                        }
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setForm((previous) => ({
+                            ...previous,
+                            supplierPrices:
+                              previous.supplierPrices.map(
+                                (item) =>
+                                  item.supplier === supplier
+                                    ? {
+                                        ...item,
+                                        priceUsd: value,
+                                      }
+                                    : item
+                              ),
+                          }));
+                        }}
+                        placeholder={
+                          sourceUrl.trim()
+                            ? "Linkten okunuyor..."
+                            : "0.00"
+                        }
+                      />
+                      {row?.priceUsd ? (
+                        <p className="text-xs text-emerald-600">
+                          {formatUsd(Number(row.priceUsd) || 0)}
+                          {usdTryRate
+                            ? ` • ${formatTry((Number(row.priceUsd) || 0) * usdTryRate)}`
+                            : ""}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {resolvedCategory ===

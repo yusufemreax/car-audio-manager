@@ -1049,12 +1049,32 @@ export function ProductTable({
                       </TableCell>
 
                       {/* PRICE */}
-                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
-                        {formatPriceUsd(
-                          Number(
-                            product.priceUsd
-                          ) || 0
-                        )}
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        <div className="space-y-1">
+                          {(product.supplierPrices?.length
+                            ? product.supplierPrices
+                            : [{
+                                supplier:
+                                  product.suppliers?.[0] ?? "EGB",
+                                priceUsd:
+                                  product.priceUsd,
+                              }]
+                          ).map((item) => (
+                            <div
+                              key={item.supplier}
+                              className="flex items-center justify-end gap-2"
+                            >
+                              <span className="text-xs text-muted-foreground">
+                                {item.supplier}
+                              </span>
+                              <span className="font-medium">
+                                {formatPriceUsd(
+                                  Number(item.priceUsd) || 0
+                                )}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </TableCell>
 
                       {/* DYNAMIC VALUES */}

@@ -11,6 +11,10 @@ import {
   getProductsByIdsWithFreshPrices,
 } from "@/lib/products-service";
 
+import type {
+  ProductDocument,
+} from "@/lib/products-collection";
+
 import {
   getSystemTemplatesCollection,
   SystemTemplateDocument,
@@ -27,6 +31,11 @@ import {
 import {
   SystemPreparationPayload,
 } from "@/types/system-preparation";
+
+import {
+  isProductSupplier,
+  type ProductSupplier,
+} from "@/types/supplier";
 
 export class SystemPreparationBuildError extends Error {
   status: number;
@@ -84,6 +93,60 @@ function safeNumber(
   )
     ? number
     : fallback;
+}
+
+function getSelectedSupplierPrice(
+  product: WithId<ProductDocument>,
+  requestedSupplier: unknown
+): {
+  supplier: ProductSupplier;
+  priceUsd: number;
+} {
+  const supplier =
+    isProductSupplier(
+      requestedSupplier
+    )
+      ? requestedSupplier
+      : product.supplierPrices?.[0]?.supplier ??
+        product.suppliers?.[0] ??
+        "EGB";
+  const supplierPrice =
+    product.supplierPrices?.find(
+      (item) =>
+        item.supplier === supplier
+    );
+
+  if (
+    product.suppliers?.length &&
+    !product.suppliers.includes(
+      supplier
+    )
+  ) {
+    throw new SystemPreparationBuildError(
+      `${product.brand} ${product.model} ürünü ${supplier} tedarikçisinde tanımlı değil.`
+    );
+  }
+
+  if (
+    supplierPrice?.sourceUnavailable === true ||
+    (!supplierPrice &&
+      supplier === (product.suppliers?.[0] ?? "EGB") &&
+      product.sourceUnavailable === true)
+  ) {
+    throw new SystemPreparationBuildError(
+      `${product.brand} ${product.model} ürünü ${supplier} tedarikçisinde satışta değil.`,
+      409
+    );
+  }
+
+  return {
+    supplier,
+    priceUsd:
+      safeNumber(
+        supplierPrice?.priceUsd ??
+          product.priceUsd
+      ),
+  };
 }
 
 /*
@@ -486,29 +549,6 @@ export async function buildSystemPreparationData(
       )
     );
 
-  const unavailableProduct =
-    products.find(
-      (product) =>
-        product.sourceUnavailable ===
-        true
-    );
-
-  if (unavailableProduct) {
-    const productName =
-      [
-        unavailableProduct.productCode,
-        unavailableProduct.brand,
-        unavailableProduct.model,
-      ]
-        .filter(Boolean)
-        .join(" · " );
-
-    throw new SystemPreparationBuildError(
-      `${productName || "Seçilen ürün"} EGB ürün sayfası 404 döndüğü için Sistem Hazırlamada kullanılamaz.`,
-      409
-    );
-  }
-
   const items:
     SystemPreparationItemDocument[] =
       [];
@@ -567,10 +607,13 @@ export async function buildSystemPreparationData(
         );
 
       if (product) {
-        const unitPriceUsd =
-          safeNumber(
-            product.priceUsd
+        const selectedSupplierPrice =
+          getSelectedSupplierPrice(
+            product,
+            selection?.supplier
           );
+        const unitPriceUsd =
+          selectedSupplierPrice.priceUsd;
 
         items.push({
           id:
@@ -602,6 +645,8 @@ export async function buildSystemPreparationData(
             product.brand,
           model:
             product.model,
+          supplier:
+            selectedSupplierPrice.supplier,
           ...(product.imageUrl
             ? {
                 imageUrl:
@@ -717,10 +762,13 @@ export async function buildSystemPreparationData(
     }
 
     if (product) {
-      const unitPriceUsd =
-        safeNumber(
-          product.priceUsd
+      const selectedSupplierPrice =
+        getSelectedSupplierPrice(
+          product,
+          customItem.supplier
         );
+      const unitPriceUsd =
+        selectedSupplierPrice.priceUsd;
 
       items.push({
         id:
@@ -750,6 +798,8 @@ export async function buildSystemPreparationData(
           product.brand,
         model:
           product.model,
+        supplier:
+          selectedSupplierPrice.supplier,
         ...(product.imageUrl
           ? {
               imageUrl:

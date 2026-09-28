@@ -1,5 +1,6 @@
 import type {
   ProductSupplier,
+  ProductSupplierPrice,
 } from "@/types/supplier";
 
 // src/types/product.ts
@@ -43,6 +44,7 @@ export interface Product {
   vehicleGenerationId?: string;
   subCategory?: string;
   suppliers: ProductSupplier[];
+  supplierPrices?: ProductSupplierPrice[];
   sourceUrl?: string;
   priceCheckedAt?: string;
   priceRefreshAttemptedAt?: string;
@@ -73,6 +75,7 @@ export type ProductPayload = {
   vehicleGenerationId?: string;
   subCategory?: string;
   suppliers: ProductSupplier[];
+  supplierPrices: ProductSupplierPrice[];
   sourceUrl?: string;
   specifications: Record<
     string,

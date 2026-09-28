@@ -16,6 +16,7 @@ import type {
 
 import type {
   ProductSupplier,
+  ProductSupplierPrice,
 } from "@/types/supplier";
 
 import {
@@ -34,6 +35,13 @@ export interface ProductDocument {
   vehicleGenerationId?: ObjectId;
   subCategory?: string;
   suppliers?: ProductSupplier[];
+  supplierPrices?: Array<{
+    supplier: ProductSupplier;
+    priceUsd: number;
+    sourceUrl?: string;
+    priceCheckedAt?: Date;
+    sourceUnavailable?: boolean;
+  }>;
   sourceUrl?: string;
   priceCheckedAt?: Date;
   priceRefreshAttemptedAt?: Date;
@@ -65,6 +73,57 @@ export function serializeProduct(
   product:
     WithId<ProductDocument>
 ): Product {
+  const suppliers =
+    normalizeProductSuppliers(
+      product.suppliers
+    );
+
+  const supplierPrices: ProductSupplierPrice[] =
+    suppliers.map((supplier, index) => {
+      const stored =
+        product.supplierPrices?.find(
+          (item) =>
+            item.supplier === supplier
+        );
+
+      return {
+        supplier,
+        priceUsd:
+          Number(
+            stored?.priceUsd ??
+              product.priceUsd
+          ) || 0,
+        ...((stored?.sourceUrl ||
+          (index === 0 && product.sourceUrl))
+          ? {
+              sourceUrl:
+                stored?.sourceUrl ??
+                product.sourceUrl,
+            }
+          : {}),
+        ...((stored?.priceCheckedAt instanceof Date ||
+          (index === 0 && product.priceCheckedAt instanceof Date))
+          ? {
+              priceCheckedAt:
+                (stored?.priceCheckedAt ??
+                  product.priceCheckedAt)!.toISOString(),
+            }
+          : {}),
+        ...(typeof stored?.sourceUnavailable === "boolean"
+          ? {
+              sourceUnavailable:
+                stored.sourceUnavailable,
+            }
+          : index === 0 &&
+              typeof product.sourceUnavailable === "boolean"
+            ? {
+                sourceUnavailable:
+                  product.sourceUnavailable,
+              }
+            : {}),
+      };
+    });
+
   return {
     id:
       product._id.toString(),
@@ -115,10 +174,8 @@ export function serializeProduct(
      * Geriye uyumluluk için bu kayıtlar EGB olarak okunur.
      * Kayıt yeniden kaydedildiğinde alan MongoDB'ye fiziksel yazılır.
      */
-    suppliers:
-      normalizeProductSuppliers(
-        product.suppliers
-      ),
+    suppliers,
+    supplierPrices,
     ...(product.sourceUrl
       ? {
           sourceUrl:

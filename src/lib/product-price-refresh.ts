@@ -162,6 +162,33 @@ function withSuccessfulCheck(
   return {
     ...product,
     priceUsd,
+    supplierPrices:
+      (product.supplierPrices?.length
+        ? product.supplierPrices
+        : [{
+            supplier:
+              product.suppliers?.[0] ?? "EGB",
+            priceUsd:
+              product.priceUsd,
+            ...(product.sourceUrl
+              ? {
+                  sourceUrl:
+                    product.sourceUrl,
+                }
+              : {}),
+          }]
+      ).map((item, index) =>
+        index === 0
+          ? {
+              ...item,
+              priceUsd,
+              priceCheckedAt:
+                checkedAt,
+              sourceUnavailable:
+                false,
+            }
+          : item
+      ),
     priceCheckedAt:
       checkedAt,
     priceRefreshAttemptedAt:
@@ -187,6 +214,17 @@ function withUnavailableState(
     ...product,
     sourceUnavailable:
       true,
+    supplierPrices:
+      product.supplierPrices?.map(
+        (item, index) =>
+          index === 0
+            ? {
+                ...item,
+                sourceUnavailable:
+                  true,
+              }
+            : item
+      ),
     sourceAvailabilityCheckedAt:
       attemptedAt,
     priceRefreshAttemptedAt:
@@ -257,6 +295,21 @@ async function markSourceUnavailable(
         $set: {
           sourceUnavailable:
             true,
+          ...(product.supplierPrices?.length
+            ? {
+                supplierPrices:
+                  product.supplierPrices.map(
+                    (item, index) =>
+                      index === 0
+                        ? {
+                            ...item,
+                            sourceUnavailable:
+                              true,
+                          }
+                        : item
+                  ),
+              }
+            : {}),
           sourceAvailabilityCheckedAt:
             attemptedAt,
           priceRefreshAttemptedAt:
@@ -368,6 +421,25 @@ async function performProductPriceRefresh(
               attemptedAt,
             sourceUnavailable:
               false,
+            ...(product.supplierPrices?.length
+              ? {
+                  supplierPrices:
+                    product.supplierPrices.map(
+                      (item, index) =>
+                        index === 0
+                          ? {
+                              ...item,
+                              priceUsd:
+                                remotePriceUsd,
+                              priceCheckedAt:
+                                attemptedAt,
+                              sourceUnavailable:
+                                false,
+                            }
+                          : item
+                    ),
+                }
+              : {}),
             sourceAvailabilityCheckedAt:
               attemptedAt,
           },
@@ -444,6 +516,7 @@ export async function refreshProductPriceIfNeeded(
     force?: boolean;
   }
 ): Promise<WithId<ProductDocument>> {
+  void _options;
   // force geriye uyumluluk için korunuyor. Günlük limit bilinçli olarak
   // bypass edilmez.
   if (

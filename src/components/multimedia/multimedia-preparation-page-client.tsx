@@ -20,6 +20,10 @@ import {
   ProductCategory,
 } from "@/types/product";
 
+import type {
+  ProductSupplier,
+} from "@/types/supplier";
+
 import {
   SystemTemplate,
 } from "@/types/system-template";
@@ -132,6 +136,17 @@ interface PreparedSlot {
 
   product:
     Product | null;
+
+  selectedSupplier?: ProductSupplier;
+  selectedPriceUsd?: number;
+}
+
+function getSlotPriceUsd(
+  slot: PreparedSlot
+) {
+  return slot.selectedPriceUsd ??
+    slot.product?.priceUsd ??
+    0;
 }
 
 /*
@@ -1153,6 +1168,10 @@ export function MultimediaPreparationPageClient() {
                       false,
                     product:
                       selectedProduct,
+                    selectedSupplier:
+                      item.supplier,
+                    selectedPriceUsd:
+                      item.unitPriceUsd,
                   };
                 }
               )
@@ -1530,7 +1549,7 @@ export function MultimediaPreparationPageClient() {
 
           return (
             total +
-            slot.product.priceUsd *
+            getSlotPriceUsd(slot) *
               slot.quantity
           );
         },
@@ -1600,7 +1619,7 @@ export function MultimediaPreparationPageClient() {
 
           return (
             total +
-            slot.product.priceUsd *
+            getSlotPriceUsd(slot) *
               slot.quantity
           );
         },
@@ -1823,6 +1842,12 @@ export function MultimediaPreparationPageClient() {
                   ? {
                       productId:
                         slot.product.id,
+                      ...(slot.selectedSupplier
+                        ? {
+                            supplier:
+                              slot.selectedSupplier,
+                          }
+                        : {}),
                     }
                   : {}),
 
@@ -1867,6 +1892,12 @@ export function MultimediaPreparationPageClient() {
                   ? {
                       productId:
                         slot.product.id,
+                      ...(slot.selectedSupplier
+                        ? {
+                            supplier:
+                              slot.selectedSupplier,
+                          }
+                        : {}),
                     }
                   : {}),
 
@@ -2788,16 +2819,25 @@ export function MultimediaPreparationPageClient() {
                                       <span>
                                         Birim:{" "}
                                         <span className="font-medium text-foreground">
-                                          {formatUsd(slot.product.priceUsd)}
+                                          {formatUsd(getSlotPriceUsd(slot))}
                                         </span>
                                       </span>
+
+                                      {slot.selectedSupplier && (
+                                        <span>
+                                          Tedarikçi:{" "}
+                                          <span className="font-medium text-foreground">
+                                            {slot.selectedSupplier}
+                                          </span>
+                                        </span>
+                                      )}
 
                                       {usdTryRate && (
                                         <span>
                                           TL:{" "}
                                           <span className="font-medium text-foreground">
                                             {formatTry(
-                                              slot.product.priceUsd * usdTryRate
+                                              getSlotPriceUsd(slot) * usdTryRate
                                             )}
                                           </span>
                                         </span>
@@ -2871,14 +2911,14 @@ export function MultimediaPreparationPageClient() {
                               <>
                                 <div className="font-semibold">
                                   {formatUsd(
-                                    slot.product.priceUsd * slot.quantity
+                                    getSlotPriceUsd(slot) * slot.quantity
                                   )}
                                 </div>
 
                                 {usdTryRate && (
                                   <div className="mt-0.5 text-xs font-medium text-foreground">
                                     {formatTry(
-                                      slot.product.priceUsd *
+                                      getSlotPriceUsd(slot) *
                                         slot.quantity *
                                         usdTryRate
                                     )}
@@ -2886,7 +2926,7 @@ export function MultimediaPreparationPageClient() {
                                 )}
 
                                 <div className="mt-0.5 text-xs text-muted-foreground">
-                                  {formatUsd(slot.product.priceUsd)}{" "}
+                                  {formatUsd(getSlotPriceUsd(slot))}{" "}
                                   × {slot.quantity}
                                 </div>
                               </>
@@ -3472,10 +3512,17 @@ export function MultimediaPreparationPageClient() {
           requiredQuantity={productSelectionSlot.quantity}
           exchangeRate={usdTryRate ?? 0}
           selectedProductId={productSelectionSlot.product?.id}
-          onSelect={(product) => {
+          selectedSupplier={productSelectionSlot.selectedSupplier}
+          onSelect={(product, supplier, priceUsd) => {
             updateSlot(
               productSelectionSlot.id,
-              { product }
+              {
+                product,
+                selectedSupplier:
+                  supplier,
+                selectedPriceUsd:
+                  priceUsd,
+              }
             );
 
             setProductSelectionSlotId(null);
@@ -3483,7 +3530,13 @@ export function MultimediaPreparationPageClient() {
           onClear={() => {
             updateSlot(
               productSelectionSlot.id,
-              { product: null }
+              {
+                product: null,
+                selectedSupplier:
+                  undefined,
+                selectedPriceUsd:
+                  undefined,
+              }
             );
 
             setProductSelectionSlotId(null);

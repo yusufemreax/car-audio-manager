@@ -2,6 +2,10 @@ import {
   ProductCategory,
 } from "@/types/product";
 
+import type {
+  ProductSupplier,
+} from "@/types/supplier";
+
 import {
   SystemLaborItem,
 } from "@/types/system-labor";
@@ -33,6 +37,7 @@ export interface SystemPreparationItem {
   brand?: string;
   model?: string;
   imageUrl?: string;
+  supplier?: ProductSupplier;
 
   /*
    * Teklif/PDF gibi snapshot kullanan akışlarda ürün özellikleri
@@ -92,6 +97,7 @@ export interface SystemPreparation {
 export interface SystemPreparationSelectionPayload {
   templateItemId: string;
   productId?: string;
+  supplier?: ProductSupplier;
   isCommissionIncluded: boolean;
 }
 
@@ -102,6 +108,7 @@ export interface SystemPreparationCustomItemPayload {
   subCategory?: string;
   quantity: number;
   productId?: string;
+  supplier?: ProductSupplier;
   isCommissionIncluded: boolean;
 }
 

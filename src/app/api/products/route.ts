@@ -43,11 +43,12 @@ import {
 } from "@/lib/product-vehicle-compatibility";
 
 import {
-  fetchProductSourcePrice,
   getProductSourceErrorStatusCode,
-  isSupportedProductSourceUrl,
-  roundCurrency,
 } from "@/lib/scraping/product-source-price";
+
+import {
+  resolveProductSupplierPrices,
+} from "@/lib/product-supplier-prices";
 
 function cleanString(
   value: unknown
@@ -249,62 +250,19 @@ export async function POST(
       );
     }
 
-    if (
-      sourceUrl &&
-      !isSupportedProductSourceUrl(
+    const supplierPrices =
+      await resolveProductSupplierPrices(
+        body.supplierPrices,
+        suppliers,
+        body.priceUsd,
         sourceUrl
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Ürün linki b2begb.com veya ozdemirelektronik.com alan adına ait olmalıdır.",
-        },
-        {
-          status: 400,
-        }
       );
-    }
-
-    let priceUsd =
-      Number(
-        body.priceUsd
-      );
-    let remoteCheckedAt:
-      Date | null = null;
-
-    if (sourceUrl) {
-      const remote =
-        await fetchProductSourcePrice(
-          sourceUrl
-        );
-
-      priceUsd =
-        roundCurrency(
-          remote.priceUsd
-        );
-      remoteCheckedAt =
-        new Date();
-    }
-
-    if (
-      !Number.isFinite(
-        priceUsd
-      ) ||
-      priceUsd < 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "USD fiyatı 0 veya daha büyük olmalıdır.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
+    const primarySupplierPrice =
+      supplierPrices[0];
+    const priceUsd =
+      primarySupplierPrice.priceUsd;
+    const primarySourceUrl =
+      primarySupplierPrice.sourceUrl ?? "";
 
     const imageUrl =
       cleanString(
@@ -403,20 +361,19 @@ export async function POST(
               }
             : {}),
           suppliers,
-          ...(sourceUrl
+          supplierPrices,
+          ...(primarySourceUrl
             ? {
-                sourceUrl,
+                sourceUrl:
+                  primarySourceUrl,
                 priceCheckedAt:
-                  remoteCheckedAt ??
-                  now,
+                  primarySupplierPrice.priceCheckedAt ?? now,
                 priceRefreshAttemptedAt:
-                  remoteCheckedAt ??
-                  now,
+                  primarySupplierPrice.priceCheckedAt ?? now,
                 sourceUnavailable:
                   false,
                 sourceAvailabilityCheckedAt:
-                  remoteCheckedAt ??
-                  now,
+                  primarySupplierPrice.priceCheckedAt ?? now,
               }
             : {}),
           ...(cleanString(
