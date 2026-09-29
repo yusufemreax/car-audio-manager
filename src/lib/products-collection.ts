@@ -33,6 +33,11 @@ export interface ProductDocument {
   vehicleBrandId?: ObjectId;
   vehicleModelId?: ObjectId;
   vehicleGenerationId?: ObjectId;
+  vehicleCompatibilities?: Array<{
+    vehicleBrandId: ObjectId;
+    vehicleModelId: ObjectId;
+    vehicleGenerationId: ObjectId;
+  }>;
   subCategory?: string;
   suppliers?: ProductSupplier[];
   supplierPrices?: Array<{
@@ -163,6 +168,36 @@ export function serializeProduct(
             product.vehicleGenerationId.toString(),
         }
       : {}),
+    ...(product.vehicleCompatibilities?.length
+      ? {
+          vehicleCompatibilities:
+            product.vehicleCompatibilities.map(
+              (compatibility) => ({
+                vehicleBrandId:
+                  compatibility.vehicleBrandId.toString(),
+                vehicleModelId:
+                  compatibility.vehicleModelId.toString(),
+                vehicleGenerationId:
+                  compatibility.vehicleGenerationId.toString(),
+              })
+            ),
+        }
+      : product.vehicleBrandId &&
+          product.vehicleModelId &&
+          product.vehicleGenerationId
+        ? {
+            vehicleCompatibilities: [
+              {
+                vehicleBrandId:
+                  product.vehicleBrandId.toString(),
+                vehicleModelId:
+                  product.vehicleModelId.toString(),
+                vehicleGenerationId:
+                  product.vehicleGenerationId.toString(),
+              },
+            ],
+          }
+        : {}),
     ...(product.subCategory
       ? {
           subCategory:

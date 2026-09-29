@@ -154,11 +154,19 @@ export async function buildMultimediaPreparationData(
       await products.countDocuments({
         category:
           "multimedia-frame",
-        vehicleGenerationId:
-          generationId,
         isUniversal: {
           $ne: true,
         },
+        $or: [
+          {
+            "vehicleCompatibilities.vehicleGenerationId":
+              generationId,
+          },
+          {
+            vehicleGenerationId:
+              generationId,
+          },
+        ],
       });
 
     const selectedFrames =
@@ -178,9 +186,17 @@ export async function buildMultimediaPreparationData(
         exactFrameCount > 0
           ? frame.isUniversal !==
               true &&
-            frame.vehicleGenerationId?.equals(
-              generationId
-            ) === true
+            (
+              frame.vehicleCompatibilities?.some(
+                (compatibility) =>
+                  compatibility.vehicleGenerationId.equals(
+                    generationId
+                  )
+              ) === true ||
+              frame.vehicleGenerationId?.equals(
+                generationId
+              ) === true
+            )
           : frame.isUniversal ===
             true;
 

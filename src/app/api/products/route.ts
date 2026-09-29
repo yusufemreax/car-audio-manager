@@ -122,8 +122,13 @@ export async function GET(
       const exactProducts =
         products.filter(
           (product) =>
+            product.vehicleCompatibilities?.some(
+              (compatibility) =>
+                compatibility.vehicleGenerationId.toString() ===
+                compatibleVehicleGenerationId
+            ) === true ||
             product.vehicleGenerationId?.toString() ===
-            compatibleVehicleGenerationId
+              compatibleVehicleGenerationId
         );
 
       products =
@@ -356,6 +361,8 @@ export async function POST(
                         vehicleCompatibility.vehicleModelId,
                       vehicleGenerationId:
                         vehicleCompatibility.vehicleGenerationId,
+                      vehicleCompatibilities:
+                        vehicleCompatibility.vehicleCompatibilities,
                     }
                   : {}),
               }

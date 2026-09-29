@@ -16,6 +16,7 @@ import {
 import {
   ImagePlus,
   Loader2,
+  Plus,
   Trash2,
 } from "lucide-react";
 
@@ -194,11 +195,11 @@ interface ProductFormState {
 
   isUniversal: boolean;
 
-  vehicleBrandId: string;
-
-  vehicleModelId: string;
-
-  vehicleGenerationId: string;
+  vehicleCompatibilities: Array<{
+    vehicleBrandId: string;
+    vehicleModelId: string;
+    vehicleGenerationId: string;
+  }>;
 }
 
 /*
@@ -225,9 +226,13 @@ function createEmptyForm(): ProductFormState {
     specifications: {},
     description: "",
     isUniversal: false,
-    vehicleBrandId: "",
-    vehicleModelId: "",
-    vehicleGenerationId: "",
+    vehicleCompatibilities: [
+      {
+        vehicleBrandId: "",
+        vehicleModelId: "",
+        vehicleGenerationId: "",
+      },
+    ],
   };
 }
 
@@ -735,26 +740,6 @@ export function ProductFormDialog({
   const vehicleBrands =
     vehicleCatalog?.brands ?? [];
 
-  const selectedVehicleBrand =
-    vehicleBrands.find(
-      (brand) =>
-        brand.id ===
-        form.vehicleBrandId
-    ) ?? null;
-
-  const vehicleModels =
-    selectedVehicleBrand?.models ?? [];
-
-  const selectedVehicleModel =
-    vehicleModels.find(
-      (model) =>
-        model.id ===
-        form.vehicleModelId
-    ) ?? null;
-
-  const vehicleGenerations =
-    selectedVehicleModel?.generations ?? [];
-
   const [
     usdTryRate,
     setUsdTryRate,
@@ -965,17 +950,23 @@ export function ProductFormDialog({
         isUniversal:
           product.isUniversal === true,
 
-        vehicleBrandId:
-          product.vehicleBrandId ??
-          "",
-
-        vehicleModelId:
-          product.vehicleModelId ??
-          "",
-
-        vehicleGenerationId:
-          product.vehicleGenerationId ??
-          "",
+        vehicleCompatibilities:
+          product.vehicleCompatibilities?.length
+            ? product.vehicleCompatibilities.map(
+                (compatibility) => ({
+                  ...compatibility,
+                })
+              )
+            : [
+                {
+                  vehicleBrandId:
+                    product.vehicleBrandId ?? "",
+                  vehicleModelId:
+                    product.vehicleModelId ?? "",
+                  vehicleGenerationId:
+                    product.vehicleGenerationId ?? "",
+                },
+              ],
       });
 
       setImageFile(
@@ -1977,11 +1968,37 @@ export function ProductFormDialog({
         resolvedCategory ===
           "multimedia-frame" &&
         !form.isUniversal &&
-        (!form.vehicleBrandId ||
-          !form.vehicleModelId ||
-          !form.vehicleGenerationId)
+        (
+          form.vehicleCompatibilities.length ===
+            0 ||
+          form.vehicleCompatibilities.some(
+            (compatibility) =>
+              !compatibility.vehicleBrandId ||
+              !compatibility.vehicleModelId ||
+              !compatibility.vehicleGenerationId
+          )
+        )
       ) {
-        return "Araç markası, modeli ve kasa/yıl seçimi zorunludur veya Universal seçilmelidir.";
+        return "Eklenen her araç için marka, model ve kasa/yıl seçimi zorunludur veya Universal seçilmelidir.";
+      }
+
+      if (
+        resolvedCategory ===
+          "multimedia-frame" &&
+        !form.isUniversal
+      ) {
+        const generationIds =
+          form.vehicleCompatibilities.map(
+            (compatibility) =>
+              compatibility.vehicleGenerationId
+          );
+
+        if (
+          new Set(generationIds).size !==
+          generationIds.length
+        ) {
+          return "Aynı araç kasa/yıl uyumluluğu birden fazla kez eklenemez.";
+        }
       }
 
       /*
@@ -2434,12 +2451,17 @@ export function ProductFormDialog({
                 form.isUniversal,
               ...(!form.isUniversal
                 ? {
+                    vehicleCompatibilities:
+                      form.vehicleCompatibilities,
                     vehicleBrandId:
-                      form.vehicleBrandId,
+                      form.vehicleCompatibilities[0]
+                        .vehicleBrandId,
                     vehicleModelId:
-                      form.vehicleModelId,
+                      form.vehicleCompatibilities[0]
+                        .vehicleModelId,
                     vehicleGenerationId:
-                      form.vehicleGenerationId,
+                      form.vehicleCompatibilities[0]
+                        .vehicleGenerationId,
                   }
                 : {}),
             }
@@ -4163,12 +4185,13 @@ export function ProductFormDialog({
                           checked,
                         ...(checked
                           ? {
-                              vehicleBrandId:
-                                "",
-                              vehicleModelId:
-                                "",
-                              vehicleGenerationId:
-                                "",
+                              vehicleCompatibilities: [
+                                {
+                                  vehicleBrandId: "",
+                                  vehicleModelId: "",
+                                  vehicleGenerationId: "",
+                                },
+                              ],
                             }
                           : {}),
                       })
@@ -4186,160 +4209,207 @@ export function ProductFormDialog({
               </label>
 
               {!form.isUniversal && (
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label>
-                      Araç Markası *
-                    </Label>
-                    <Select
-                      items={vehicleBrands.map(
-                        (brand) => ({
-                          value: brand.id,
-                          label: brand.name,
-                        })
-                      )}
-                      value={
-                        form.vehicleBrandId ||
-                        null
-                      }
-                      onValueChange={(value) => {
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            vehicleBrandId:
-                              value ?? "",
-                            vehicleModelId:
-                              "",
-                            vehicleGenerationId:
-                              "",
-                          })
+                <div className="space-y-3">
+                  {form.vehicleCompatibilities.map(
+                    (compatibility, index) => {
+                      const rowBrand =
+                        vehicleBrands.find(
+                          (brand) =>
+                            brand.id ===
+                            compatibility.vehicleBrandId
                         );
-                      }}
-                      disabled={
-                        submitting ||
-                        loadingVehicleCatalog
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue
-                          placeholder={
-                            loadingVehicleCatalog
-                              ? "Yükleniyor..."
-                              : "Marka seçin"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {vehicleBrands.map(
-                          (brand) => (
-                            <SelectItem
-                              key={brand.id}
-                              value={brand.id}
-                            >
-                              {brand.name}
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                      const rowModels =
+                        rowBrand?.models ?? [];
+                      const rowModel =
+                        rowModels.find(
+                          (model) =>
+                            model.id ===
+                            compatibility.vehicleModelId
+                        );
+                      const rowGenerations =
+                        rowModel?.generations ?? [];
 
-                  <div className="space-y-2">
-                    <Label>
-                      Araç Modeli *
-                    </Label>
-                    <Select
-                      items={vehicleModels.map(
-                        (model) => ({
-                          value: model.id,
-                          label: model.name,
-                        })
-                      )}
-                      value={
-                        form.vehicleModelId ||
-                        null
-                      }
-                      onValueChange={(value) => {
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            vehicleModelId:
-                              value ?? "",
-                            vehicleGenerationId:
-                              "",
-                          })
-                        );
-                      }}
-                      disabled={
-                        submitting ||
-                        !form.vehicleBrandId
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Model seçin" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {vehicleModels.map(
-                          (model) => (
-                            <SelectItem
-                              key={model.id}
-                              value={model.id}
+                      return (
+                        <div
+                          key={index}
+                          className="rounded-xl border p-4"
+                        >
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium">
+                              Araç {index + 1}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              disabled={
+                                submitting ||
+                                form.vehicleCompatibilities.length === 1
+                              }
+                              onClick={() => {
+                                setForm(
+                                  (previous) => ({
+                                    ...previous,
+                                    vehicleCompatibilities:
+                                      previous.vehicleCompatibilities.filter(
+                                        (_, rowIndex) =>
+                                          rowIndex !== index
+                                      ),
+                                  })
+                                );
+                              }}
+                              aria-label={`${index + 1}. aracı kaldır`}
                             >
-                              {model.name}
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
 
-                  <div className="space-y-2">
-                    <Label>
-                      Kasa / Yıl *
-                    </Label>
-                    <Select
-                      items={vehicleGenerations.map(
-                        (generation) => ({
-                          value:
-                            generation.id,
-                          label: `${generation.name} · ${generation.startYear}-${generation.endYear}`,
-                        })
-                      )}
-                      value={
-                        form.vehicleGenerationId ||
-                        null
-                      }
-                      onValueChange={(value) => {
-                        setForm(
-                          (previous) => ({
-                            ...previous,
-                            vehicleGenerationId:
-                              value ?? "",
-                          })
-                        );
-                      }}
-                      disabled={
-                        submitting ||
-                        !form.vehicleModelId
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Kasa / yıl seçin" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {vehicleGenerations.map(
-                          (generation) => (
-                            <SelectItem
-                              key={generation.id}
-                              value={generation.id}
-                            >
-                              {generation.name} · {generation.startYear}-{generation.endYear}
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                          <div className="grid gap-4 sm:grid-cols-3">
+                            <div className="space-y-2">
+                              <Label>Araç Markası *</Label>
+                              <Select
+                                items={vehicleBrands.map(
+                                  (brand) => ({
+                                    value: brand.id,
+                                    label: brand.name,
+                                  })
+                                )}
+                                value={compatibility.vehicleBrandId || null}
+                                onValueChange={(value) => {
+                                  setForm((previous) => ({
+                                    ...previous,
+                                    vehicleCompatibilities:
+                                      previous.vehicleCompatibilities.map(
+                                        (item, rowIndex) =>
+                                          rowIndex === index
+                                            ? {
+                                                vehicleBrandId: value ?? "",
+                                                vehicleModelId: "",
+                                                vehicleGenerationId: "",
+                                              }
+                                            : item
+                                      ),
+                                  }));
+                                }}
+                                disabled={submitting || loadingVehicleCatalog}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder={loadingVehicleCatalog ? "Yükleniyor..." : "Marka seçin"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {vehicleBrands.map((brand) => (
+                                    <SelectItem key={brand.id} value={brand.id}>
+                                      {brand.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Araç Modeli *</Label>
+                              <Select
+                                items={rowModels.map((model) => ({
+                                  value: model.id,
+                                  label: model.name,
+                                }))}
+                                value={compatibility.vehicleModelId || null}
+                                onValueChange={(value) => {
+                                  setForm((previous) => ({
+                                    ...previous,
+                                    vehicleCompatibilities:
+                                      previous.vehicleCompatibilities.map(
+                                        (item, rowIndex) =>
+                                          rowIndex === index
+                                            ? {
+                                                ...item,
+                                                vehicleModelId: value ?? "",
+                                                vehicleGenerationId: "",
+                                              }
+                                            : item
+                                      ),
+                                  }));
+                                }}
+                                disabled={submitting || !compatibility.vehicleBrandId}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Model seçin" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {rowModels.map((model) => (
+                                    <SelectItem key={model.id} value={model.id}>
+                                      {model.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Kasa / Yıl *</Label>
+                              <Select
+                                items={rowGenerations.map((generation) => ({
+                                  value: generation.id,
+                                  label: `${generation.name} · ${generation.startYear}-${generation.endYear}`,
+                                }))}
+                                value={compatibility.vehicleGenerationId || null}
+                                onValueChange={(value) => {
+                                  setForm((previous) => ({
+                                    ...previous,
+                                    vehicleCompatibilities:
+                                      previous.vehicleCompatibilities.map(
+                                        (item, rowIndex) =>
+                                          rowIndex === index
+                                            ? {
+                                                ...item,
+                                                vehicleGenerationId: value ?? "",
+                                              }
+                                            : item
+                                      ),
+                                  }));
+                                }}
+                                disabled={submitting || !compatibility.vehicleModelId}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Kasa / yıl seçin" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {rowGenerations.map((generation) => (
+                                    <SelectItem key={generation.id} value={generation.id}>
+                                      {generation.name} · {generation.startYear}-{generation.endYear}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={submitting}
+                    onClick={() => {
+                      setForm((previous) => ({
+                        ...previous,
+                        vehicleCompatibilities: [
+                          ...previous.vehicleCompatibilities,
+                          {
+                            vehicleBrandId: "",
+                            vehicleModelId: "",
+                            vehicleGenerationId: "",
+                          },
+                        ],
+                      }));
+                    }}
+                  >
+                    <Plus className="size-4" />
+                    Yeni Araç Ekle
+                  </Button>
                 </div>
               )}
             </div>

@@ -31,6 +31,12 @@ export type ProductSpecificationValue =
   | number
   | boolean;
 
+export interface ProductVehicleCompatibility {
+  vehicleBrandId: string;
+  vehicleModelId: string;
+  vehicleGenerationId: string;
+}
+
 export interface Product {
   id: string;
   productCode: string;
@@ -42,6 +48,8 @@ export interface Product {
   vehicleBrandId?: string;
   vehicleModelId?: string;
   vehicleGenerationId?: string;
+  vehicleCompatibilities?:
+    ProductVehicleCompatibility[];
   subCategory?: string;
   suppliers: ProductSupplier[];
   supplierPrices?: ProductSupplierPrice[];
@@ -73,6 +81,8 @@ export type ProductPayload = {
   vehicleBrandId?: string;
   vehicleModelId?: string;
   vehicleGenerationId?: string;
+  vehicleCompatibilities?:
+    ProductVehicleCompatibility[];
   subCategory?: string;
   suppliers: ProductSupplier[];
   supplierPrices: ProductSupplierPrice[];

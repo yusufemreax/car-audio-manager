@@ -80,71 +80,165 @@ export async function buildProductVehicleCompatibility(
     };
   }
 
-  const vehicleBrandId = objectId(
-    body.vehicleBrandId,
-    "araç markası"
-  );
-  const vehicleModelId = objectId(
-    body.vehicleModelId,
-    "araç modeli"
-  );
-  const vehicleGenerationId = objectId(
-    body.vehicleGenerationId,
-    "araç kasa/yıl bilgisi"
-  );
+  const rawCompatibilities =
+    Array.isArray(
+      body.vehicleCompatibilities
+    ) &&
+    body.vehicleCompatibilities.length > 0
+      ? body.vehicleCompatibilities
+      : [
+          {
+            vehicleBrandId:
+              body.vehicleBrandId ?? "",
+            vehicleModelId:
+              body.vehicleModelId ?? "",
+            vehicleGenerationId:
+              body.vehicleGenerationId ?? "",
+          },
+        ];
+
+  const vehicleCompatibilities =
+    rawCompatibilities.map(
+      (compatibility, index) => ({
+        vehicleBrandId:
+          objectId(
+            compatibility.vehicleBrandId,
+            `${index + 1}. araç markası`
+          ),
+        vehicleModelId:
+          objectId(
+            compatibility.vehicleModelId,
+            `${index + 1}. araç modeli`
+          ),
+        vehicleGenerationId:
+          objectId(
+            compatibility.vehicleGenerationId,
+            `${index + 1}. araç kasa/yıl bilgisi`
+          ),
+      })
+    );
+
+  const generationIds =
+    vehicleCompatibilities.map(
+      (compatibility) =>
+        compatibility.vehicleGenerationId.toString()
+    );
+
+  if (
+    new Set(generationIds).size !==
+    generationIds.length
+  ) {
+    throw new ProductVehicleCompatibilityError(
+      "Aynı araç kasa/yıl uyumluluğu birden fazla kez eklenemez."
+    );
+  }
 
   const catalog =
     await getVehicleCatalogCollections();
-  const [brand, model, generation] =
-    await Promise.all([
-      catalog.brands.findOne({
-        _id: vehicleBrandId,
-      }),
-      catalog.models.findOne({
-        _id: vehicleModelId,
-        brandId: vehicleBrandId,
-      }),
-      catalog.generations.findOne({
-        _id: vehicleGenerationId,
-        brandId: vehicleBrandId,
-        modelId: vehicleModelId,
-      }),
-    ]);
 
-  if (!brand) {
-    throw new ProductVehicleCompatibilityError(
-      "Seçilen araç markası bulunamadı.",
-      404
-    );
-  }
+  const resolvedCompatibilities =
+    await Promise.all(
+      vehicleCompatibilities.map(
+        async (
+          compatibility,
+          index
+        ) => {
+          const [brand, model, generation] =
+            await Promise.all([
+              catalog.brands.findOne({
+                _id:
+                  compatibility.vehicleBrandId,
+              }),
+              catalog.models.findOne({
+                _id:
+                  compatibility.vehicleModelId,
+                brandId:
+                  compatibility.vehicleBrandId,
+              }),
+              catalog.generations.findOne({
+                _id:
+                  compatibility.vehicleGenerationId,
+                brandId:
+                  compatibility.vehicleBrandId,
+                modelId:
+                  compatibility.vehicleModelId,
+              }),
+            ]);
 
-  if (!model) {
-    throw new ProductVehicleCompatibilityError(
-      "Seçilen araç modeli bu markaya ait değil veya bulunamadı.",
-      404
-    );
-  }
+          if (!brand) {
+            throw new ProductVehicleCompatibilityError(
+              `${index + 1}. araç markası bulunamadı.`,
+              404
+            );
+          }
 
-  if (!generation) {
-    throw new ProductVehicleCompatibilityError(
-      "Seçilen kasa/yıl bu modele ait değil veya bulunamadı.",
-      404
+          if (!model) {
+            throw new ProductVehicleCompatibilityError(
+              `${index + 1}. araç modeli bu markaya ait değil veya bulunamadı.`,
+              404
+            );
+          }
+
+          if (!generation) {
+            throw new ProductVehicleCompatibilityError(
+              `${index + 1}. kasa/yıl bu modele ait değil veya bulunamadı.`,
+              404
+            );
+          }
+
+          return {
+            ...compatibility,
+            brandName:
+              brand.name,
+            modelName:
+              model.name,
+            generationName:
+              generation.name,
+            startYear:
+              generation.startYear,
+            endYear:
+              generation.endYear,
+          };
+        }
+      )
     );
-  }
 
   specifications.vehicleBrand =
-    brand.name;
+    Array.from(
+      new Set(
+        resolvedCompatibilities.map(
+          (item) => item.brandName
+        )
+      )
+    ).join(", ");
   specifications.vehicleModel =
-    `${model.name} ${generation.name}`.trim();
+    resolvedCompatibilities
+      .map(
+        (item) =>
+          `${item.modelName} ${item.generationName}`.trim()
+      )
+      .join(", ");
   specifications.compatibleYears =
-    `${generation.startYear}-${generation.endYear}`;
+    resolvedCompatibilities
+      .map(
+        (item) =>
+          `${item.startYear}-${item.endYear}`
+      )
+      .join(", ");
+
+  const primaryCompatibility =
+    vehicleCompatibilities[0];
 
   return {
     specifications,
     isMultimediaFrame: true as const,
     isUniversal: false,
-    vehicleBrandId,
-    vehicleModelId,
-    vehicleGenerationId,
+    vehicleBrandId:
+      primaryCompatibility.vehicleBrandId,
+    vehicleModelId:
+      primaryCompatibility.vehicleModelId,
+    vehicleGenerationId:
+      primaryCompatibility.vehicleGenerationId,
+    vehicleCompatibilities,
   };
 }

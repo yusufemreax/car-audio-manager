@@ -373,6 +373,8 @@ export async function PUT(
                         vehicleCompatibility.vehicleModelId,
                       vehicleGenerationId:
                         vehicleCompatibility.vehicleGenerationId,
+                      vehicleCompatibilities:
+                        vehicleCompatibility.vehicleCompatibilities,
                     }
                   : {}),
               }
@@ -456,6 +458,7 @@ export async function PUT(
                 vehicleBrandId: "",
                 vehicleModelId: "",
                 vehicleGenerationId: "",
+                vehicleCompatibilities: "",
               }
             : {}),
           ...(!vehicleCompatibility.isMultimediaFrame
