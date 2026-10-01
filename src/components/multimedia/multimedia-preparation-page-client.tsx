@@ -25,16 +25,13 @@ import type {
 } from "@/types/supplier";
 
 import {
-  SystemTemplate,
-} from "@/types/system-template";
-
-import {
   SystemLaborItem,
 } from "@/types/system-labor";
 
 import {
   MultimediaPreparation,
   MultimediaPreparationPayload,
+  type MultimediaPreparationMode,
 } from "@/types/multimedia-preparation";
 
 import type {
@@ -139,6 +136,7 @@ interface PreparedSlot {
 
   selectedSupplier?: ProductSupplier;
   selectedPriceUsd?: number;
+  locked?: boolean;
 }
 
 function getSlotPriceUsd(
@@ -147,6 +145,39 @@ function getSlotPriceUsd(
   return slot.selectedPriceUsd ??
     slot.product?.priceUsd ??
     0;
+}
+
+function createModeSlots(
+  mode: MultimediaPreparationMode
+): PreparedSlot[] {
+  const multimediaSlot: PreparedSlot = {
+    id: "multimedia-screen",
+    source: "custom",
+    label: "Multimedya Ekran",
+    category: "multimedia",
+    quantity: 1,
+    isCommissionIncluded: true,
+    product: null,
+    locked: true,
+  };
+
+  if (mode === "vehicle_specific") {
+    return [multimediaSlot];
+  }
+
+  return [
+    {
+      id: "multimedia-frame",
+      source: "custom",
+      label: "Multimedya Çerçevesi",
+      category: "multimedia-frame",
+      quantity: 1,
+      isCommissionIncluded: true,
+      product: null,
+      locked: true,
+    },
+    multimediaSlot,
+  ];
 }
 
 /*
@@ -218,17 +249,11 @@ export function MultimediaPreparationPageClient() {
    */
 
   const [
-    templates,
-    setTemplates,
-  ] =
-    useState<
-      SystemTemplate[]
-    >([]);
-
-  const [
-    selectedTemplateId,
-    setSelectedTemplateId,
-  ] = useState("");
+    multimediaMode,
+    setMultimediaMode,
+  ] = useState<MultimediaPreparationMode>(
+    "framed"
+  );
 
   const [, setSystemName] = useState("");
 
@@ -268,7 +293,11 @@ export function MultimediaPreparationPageClient() {
   ] =
     useState<
       PreparedSlot[]
-    >([]);
+    >(
+      createModeSlots(
+        "framed"
+      )
+    );
 
   const [
     laborItems,
@@ -623,6 +652,54 @@ export function MultimediaPreparationPageClient() {
         return;
       }
 
+      if (
+        slot.category === "multimedia" &&
+        multimediaMode === "vehicle_specific" &&
+        !selectedVehicleGenerationId
+      ) {
+        setError(
+          "Araca özel ekran seçmeden önce araç marka, model ve kasa/yıl seçmelisiniz."
+        );
+        return;
+      }
+
+      const selectedFrame =
+        slots.find(
+          (currentSlot) =>
+            currentSlot.category ===
+              "multimedia-frame" &&
+            currentSlot.product
+        )?.product ?? null;
+      const selectedFrameSize =
+        selectedFrame
+          ? String(
+              selectedFrame.specifications?.size ??
+                ""
+            ).trim()
+          : "";
+
+      if (
+        slot.category === "multimedia" &&
+        multimediaMode === "framed" &&
+        !selectedFrame
+      ) {
+        setError(
+          "Multimedya ekran seçmeden önce çerçeveyi seçmelisiniz."
+        );
+        return;
+      }
+
+      if (
+        slot.category === "multimedia" &&
+        multimediaMode === "framed" &&
+        !selectedFrameSize
+      ) {
+        setError(
+          "Seçilen çerçevenin boyut bilgisi bulunamadı."
+        );
+        return;
+      }
+
       setRefreshingProductSlotId(
         slotId
       );
@@ -648,6 +725,34 @@ export function MultimediaPreparationPageClient() {
             "compatibleVehicleGenerationId",
             selectedVehicleGenerationId
           );
+        }
+
+        if (
+          slot.category ===
+          "multimedia"
+        ) {
+          productParams.set(
+            "vehicleSpecific",
+            multimediaMode ===
+              "vehicle_specific"
+              ? "true"
+              : "false"
+          );
+
+          if (
+            multimediaMode ===
+            "vehicle_specific"
+          ) {
+            productParams.set(
+              "compatibleVehicleGenerationId",
+              selectedVehicleGenerationId
+            );
+          } else {
+            productParams.set(
+              "screenSize",
+              selectedFrameSize
+            );
+          }
         }
 
         const response =
@@ -726,57 +831,6 @@ export function MultimediaPreparationPageClient() {
 
   /*
    * =======================================================
-   * SELECTED TEMPLATE
-   * =======================================================
-   */
-
-  const selectedTemplate =
-    useMemo(
-      () =>
-        templates.find(
-          (template) =>
-            template.id ===
-            selectedTemplateId
-        ) ?? null,
-      [
-        templates,
-        selectedTemplateId,
-      ]
-    );
-
-  /*
-   * =======================================================
-   * TEMPLATE SELECT ITEMS
-   *
-   * Base UI:
-   * value = MongoDB ID
-   * label = Şablon adı
-   * =======================================================
-   */
-
-  const templateSelectItems =
-    useMemo(
-      () => [
-        {
-          value:
-            "__none__",
-          label:
-            "Şablonsuz / Sıfırdan",
-        },
-        ...templates.map(
-          (template) => ({
-            value:
-              template.id,
-            label:
-              template.name,
-          })
-        ),
-      ],
-      [templates]
-    );
-
-  /*
-   * =======================================================
    * CATEGORY SELECT ITEMS
    * =======================================================
    */
@@ -795,54 +849,6 @@ export function MultimediaPreparationPageClient() {
         ),
       []
     );
-
-  /*
-   * =======================================================
-   * LOAD TEMPLATES
-   * =======================================================
-   */
-
-  useEffect(() => {
-    const loadTemplates =
-      async () => {
-        try {
-          const response =
-            await fetch(
-              "/api/system-templates",
-              {
-                cache: "no-store",
-              }
-            );
-
-          const result: ApiResponse<
-            SystemTemplate[]
-          > =
-            await response.json();
-
-          if (
-            !response.ok ||
-            !result.success
-          ) {
-            throw new Error(
-              result.message ??
-                "Şablonlar alınamadı."
-            );
-          }
-
-          setTemplates(
-            result.data ?? []
-          );
-        } catch (error) {
-          setError(
-            error instanceof Error
-              ? error.message
-              : "Şablonlar alınamadı."
-          );
-        }
-      };
-
-    void loadTemplates();
-  }, []);
 
   /*
    * =======================================================
@@ -1028,9 +1034,8 @@ export function MultimediaPreparationPageClient() {
             )
           );
 
-          setSelectedTemplateId(
-            preparation.templateId ??
-              ""
+          setMultimediaMode(
+            preparation.multimediaMode
           );
 
           setLaborItems(
@@ -1135,10 +1140,23 @@ export function MultimediaPreparationPageClient() {
             editingPreparation
           ) {
             setSlots(
-              editingPreparation.items.map(
+              createModeSlots(
+                editingPreparation.multimediaMode
+              ).map(
                 (
-                  item
+                  modeSlot
                 ): PreparedSlot => {
+                  const item =
+                    editingPreparation.items.find(
+                      (currentItem) =>
+                        currentItem.category ===
+                        modeSlot.category
+                    );
+
+                  if (!item) {
+                    return modeSlot;
+                  }
+
                   const selectedProduct =
                     item.productId
                       ? loadedProducts.find(
@@ -1149,16 +1167,7 @@ export function MultimediaPreparationPageClient() {
                       : null;
 
                   return {
-                    id:
-                      item.id,
-                    source:
-                      item.source,
-                    templateItemId:
-                      item.templateItemId,
-                    label:
-                      item.label,
-                    category:
-                      item.category,
+                    ...modeSlot,
                     subCategory:
                       item.subCategory,
                     quantity:
@@ -1172,6 +1181,8 @@ export function MultimediaPreparationPageClient() {
                       item.supplier,
                     selectedPriceUsd:
                       item.unitPriceUsd,
+                    locked:
+                      true,
                   };
                 }
               )
@@ -1197,124 +1208,6 @@ export function MultimediaPreparationPageClient() {
     void loadProducts();
   }, [
     editingPreparation,
-  ]);
-
-  /*
-   * =======================================================
-   * TEMPLATE CHANGED
-   *
-   * - Şablon seçilirse ürün alanları + işçilik kalemleri gelir.
-   * - Şablonsuz seçilirse kullanıcı sıfırdan oluşturur.
-   * =======================================================
-   */
-
-  useEffect(() => {
-    const editingTemplateId =
-      editingPreparation?.templateId ??
-      "";
-
-    if (
-      editingPreparation &&
-      editingTemplateId ===
-        selectedTemplateId
-    ) {
-      return;
-    }
-
-    if (!selectedTemplate) {
-      setSlots([]);
-      setLaborItems([]);
-
-      if (!editingReadySystemId) {
-        setCurrentPreparationId(
-          null
-        );
-        setCommissionRate(
-          "0"
-        );
-        setDiscountTry(
-          "0"
-        );
-      }
-
-      setSuccessMessage(
-        null
-      );
-      setError(null);
-      return;
-    }
-
-    setSlots(
-      [...selectedTemplate.items]
-        .sort(
-          (
-            first,
-            second
-          ) =>
-            first.sortOrder -
-            second.sortOrder
-        )
-        .map(
-          (
-            item
-          ): PreparedSlot => ({
-            id:
-              item.id,
-            source:
-              "template",
-            templateItemId:
-              item.id,
-            label:
-              item.label,
-            category:
-              item.category,
-            subCategory:
-              item.subCategory,
-            quantity:
-              item.quantity,
-            isCommissionIncluded:
-              true,
-            product:
-              null,
-          })
-        )
-    );
-
-    setLaborItems(
-      (selectedTemplate.laborItems ?? [])
-        .map(
-          (
-            item,
-            index
-          ) => ({
-            ...item,
-            sortOrder:
-              index,
-          })
-        )
-    );
-
-    if (!editingReadySystemId) {
-      setCurrentPreparationId(
-        null
-      );
-      setCommissionRate(
-        "0"
-      );
-      setDiscountTry(
-        "0"
-      );
-    }
-
-    setSuccessMessage(
-      null
-    );
-    setError(null);
-  }, [
-    selectedTemplate,
-    selectedTemplateId,
-    editingPreparation,
-    editingReadySystemId,
   ]);
 
   /*
@@ -1356,58 +1249,18 @@ export function MultimediaPreparationPageClient() {
         (previous) =>
           previous.map(
             (slot) =>
-              slot.category ===
-                "multimedia-frame" &&
               slot.product
                 ? {
                     ...slot,
                     product: null,
+                    selectedSupplier:
+                      undefined,
+                    selectedPriceUsd:
+                      undefined,
                   }
                 : slot
           )
       );
-    };
-
-  /*
-   * =======================================================
-   * ADD CUSTOM SLOT
-   * =======================================================
-   */
-
-  const addCustomSlot =
-    () => {
-      const defaultCategory =
-        productCategories[0]
-          .value;
-
-      setSlots(
-        (previous) => [
-          ...previous,
-
-          {
-            id:
-              createCustomSlotId(),
-
-            source:
-              "custom",
-
-            label: "",
-
-            category:
-              defaultCategory,
-
-            quantity: 1,
-
-            isCommissionIncluded:
-              true,
-
-            product:
-              null,
-          },
-        ]
-      );
-
-      setSuccessMessage(null);
     };
 
   /*
@@ -1766,6 +1619,7 @@ export function MultimediaPreparationPageClient() {
       }
 
       return {
+        multimediaMode,
         vehicleBrandId:
           selectedVehicleBrandId,
         vehicleModelId:
@@ -1779,13 +1633,6 @@ export function MultimediaPreparationPageClient() {
                 additionalDescription
                   .trim()
                   .slice(0, 500),
-            }
-          : {}),
-
-        ...(selectedTemplate
-          ? {
-              templateId:
-                selectedTemplate.id,
             }
           : {}),
 
@@ -2127,11 +1974,15 @@ export function MultimediaPreparationPageClient() {
         setSelectedVehicleModelId("");
         setSelectedVehicleGenerationId("");
 
-        setSelectedTemplateId(
-          ""
+        setMultimediaMode(
+          "framed"
         );
 
-        setSlots([]);
+        setSlots(
+          createModeSlots(
+            "framed"
+          )
+        );
 
         setLaborItems([]);
 
@@ -2326,37 +2177,52 @@ export function MultimediaPreparationPageClient() {
           </div>
 
           <div className="space-y-2">
-            <Label>Şablon (Opsiyonel)</Label>
+            <Label>Multimedya Tipi</Label>
             <Select
-              items={templateSelectItems}
-              value={selectedTemplateId || "__none__"}
+              items={[
+                {
+                  value: "framed",
+                  label: "Çerçeveli",
+                },
+                {
+                  value: "vehicle_specific",
+                  label: "Araca Özel",
+                },
+              ]}
+              value={multimediaMode}
               onValueChange={(value) => {
-                const selectedValue = value ?? "__none__";
-                const nextTemplateId =
-                  selectedValue === "__none__" ? "" : selectedValue;
+                if (
+                  value !== "framed" &&
+                  value !== "vehicle_specific"
+                ) {
+                  return;
+                }
 
                 if (
                   editingReadySystem &&
-                  nextTemplateId !== selectedTemplateId
+                  value !== multimediaMode
                 ) {
                   setEditingPreparation(null);
                 }
 
-                setSelectedTemplateId(nextTemplateId);
+                setMultimediaMode(value);
+                setSlots(
+                  createModeSlots(value)
+                );
+                setSuccessMessage(null);
+                setError(null);
               }}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Şablonsuz / Sıfırdan" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">
-                  Şablonsuz / Sıfırdan
+                <SelectItem value="framed">
+                  Çerçeveli
                 </SelectItem>
-                {templates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    {template.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="vehicle_specific">
+                  Araca Özel
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -2426,20 +2292,6 @@ export function MultimediaPreparationPageClient() {
                     </Badge>
                   )}
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={
-                    addCustomSlot
-                  }
-                >
-                  <Plus className="size-4" />
-
-                  {selectedTemplate
-                    ? "Ek Ürün Alanı"
-                    : "Ürün Alanı Ekle"}
-                </Button>
               </div>
             </div>
 
@@ -2525,6 +2377,8 @@ export function MultimediaPreparationPageClient() {
                                   {slot.source ===
                                   "template"
                                     ? "Şablon"
+                                    : slot.locked
+                                      ? "Hazır Alan"
                                     : "Ek Alan"}
                                 </Badge>
 
@@ -2539,7 +2393,8 @@ export function MultimediaPreparationPageClient() {
                           </div>
 
                           {slot.source ===
-                            "custom" && (
+                            "custom" &&
+                            !slot.locked && (
                             <Button
                               type="button"
                               variant="ghost"
@@ -2561,7 +2416,8 @@ export function MultimediaPreparationPageClient() {
                         ===================================== */}
 
                         {slot.source ===
-                          "custom" && (
+                          "custom" &&
+                          !slot.locked && (
                           <div className="grid gap-4 rounded-xl border bg-muted/10 p-4 md:grid-cols-2 xl:grid-cols-4">
                             {/* SLOT NAME */}
 
@@ -2982,36 +2838,6 @@ export function MultimediaPreparationPageClient() {
                 }
               )
             )}
-
-            {/* NO SLOT */}
-
-            {!loadingProducts &&
-              slots.length ===
-                0 && (
-                <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed text-center">
-                  <Package className="mb-3 size-8 text-muted-foreground" />
-
-                  <div className="font-medium">
-                    Ürün alanı
-                    bulunmuyor
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-4"
-                    onClick={
-                      addCustomSlot
-                    }
-                  >
-                    <Plus className="size-4" />
-
-                    Ürün Alanı
-                    Ekle
-                  </Button>
-                </div>
-              )}
 
             {/* LABOR ITEMS */}
 
@@ -3514,6 +3340,62 @@ export function MultimediaPreparationPageClient() {
           selectedProductId={productSelectionSlot.product?.id}
           selectedSupplier={productSelectionSlot.selectedSupplier}
           onSelect={(product, supplier, priceUsd) => {
+            if (
+              productSelectionSlot.category ===
+              "multimedia-frame"
+            ) {
+              const nextFrameSize =
+                String(
+                  product.specifications?.size ??
+                    ""
+                ).trim();
+
+              setSlots(
+                (previous) =>
+                  previous.map(
+                    (slot) => {
+                      if (
+                        slot.id ===
+                        productSelectionSlot.id
+                      ) {
+                        return {
+                          ...slot,
+                          product,
+                          selectedSupplier:
+                            supplier,
+                          selectedPriceUsd:
+                            priceUsd,
+                        };
+                      }
+
+                      if (
+                        slot.category ===
+                          "multimedia" &&
+                        slot.product &&
+                        String(
+                          slot.product.specifications?.screenSize ??
+                            ""
+                        ).trim() !==
+                          nextFrameSize
+                      ) {
+                        return {
+                          ...slot,
+                          product: null,
+                          selectedSupplier:
+                            undefined,
+                          selectedPriceUsd:
+                            undefined,
+                        };
+                      }
+
+                      return slot;
+                    })
+              );
+              setSuccessMessage(null);
+              setProductSelectionSlotId(null);
+              return;
+            }
+
             updateSlot(
               productSelectionSlot.id,
               {
@@ -3528,6 +3410,34 @@ export function MultimediaPreparationPageClient() {
             setProductSelectionSlotId(null);
           }}
           onClear={() => {
+            if (
+              productSelectionSlot.category ===
+              "multimedia-frame"
+            ) {
+              setSlots(
+                (previous) =>
+                  previous.map(
+                    (slot) =>
+                      slot.category ===
+                          "multimedia-frame" ||
+                        slot.category ===
+                          "multimedia"
+                        ? {
+                            ...slot,
+                            product: null,
+                            selectedSupplier:
+                              undefined,
+                            selectedPriceUsd:
+                              undefined,
+                          }
+                        : slot
+                  )
+              );
+              setSuccessMessage(null);
+              setProductSelectionSlotId(null);
+              return;
+            }
+
             updateSlot(
               productSelectionSlot.id,
               {

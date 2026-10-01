@@ -45,6 +45,7 @@ export interface Product {
   priceUsd: number;
   category: ProductCategory;
   isUniversal?: boolean;
+  isVehicleSpecific?: boolean;
   vehicleBrandId?: string;
   vehicleModelId?: string;
   vehicleGenerationId?: string;
@@ -78,6 +79,7 @@ export type ProductPayload = {
   priceUsd: number;
   category: ProductCategory;
   isUniversal?: boolean;
+  isVehicleSpecific?: boolean;
   vehicleBrandId?: string;
   vehicleModelId?: string;
   vehicleGenerationId?: string;

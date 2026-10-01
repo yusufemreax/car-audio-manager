@@ -3,8 +3,13 @@ import type {
   SystemPreparationPayload,
 } from "@/types/system-preparation";
 
+export type MultimediaPreparationMode =
+  | "framed"
+  | "vehicle_specific";
+
 export interface MultimediaPreparation
   extends SystemPreparation {
+  multimediaMode: MultimediaPreparationMode;
   vehicleBrandId: string;
   vehicleBrandName: string;
   vehicleModelId: string;
@@ -23,6 +28,7 @@ export interface MultimediaPreparation
 
 export interface MultimediaPreparationPayload
   extends Omit<SystemPreparationPayload, "name"> {
+  multimediaMode: MultimediaPreparationMode;
   vehicleBrandId: string;
   vehicleModelId: string;
   vehicleGenerationId: string;

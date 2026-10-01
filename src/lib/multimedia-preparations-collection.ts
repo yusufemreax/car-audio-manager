@@ -15,10 +15,12 @@ import {
 
 import type {
   MultimediaPreparation,
+  MultimediaPreparationMode,
 } from "@/types/multimedia-preparation";
 
 export interface MultimediaPreparationDocument
   extends SystemPreparationDocument {
+  multimediaMode?: MultimediaPreparationMode;
   vehicleBrandId: ObjectId;
   vehicleBrandName: string;
   vehicleModelId: ObjectId;
@@ -85,6 +87,17 @@ export function serializeMultimediaPreparation(
 
   return {
     ...base,
+    multimediaMode:
+      preparation.multimediaMode ??
+      (
+        preparation.items.some(
+          (item) =>
+            item.category ===
+            "multimedia-frame"
+        )
+          ? "framed"
+          : "vehicle_specific"
+      ),
     vehicleBrandId:
       preparation.vehicleBrandId.toString(),
     vehicleBrandName:

@@ -365,18 +365,24 @@ export async function PUT(
             ? {
                 isUniversal:
                   vehicleCompatibility.isUniversal,
-                ...(!vehicleCompatibility.isUniversal
-                  ? {
-                      vehicleBrandId:
-                        vehicleCompatibility.vehicleBrandId,
-                      vehicleModelId:
-                        vehicleCompatibility.vehicleModelId,
-                      vehicleGenerationId:
-                        vehicleCompatibility.vehicleGenerationId,
-                      vehicleCompatibilities:
-                        vehicleCompatibility.vehicleCompatibilities,
-                    }
-                  : {}),
+              }
+            : {}),
+          ...(vehicleCompatibility.isMultimedia
+            ? {
+                isVehicleSpecific:
+                  vehicleCompatibility.isVehicleSpecific,
+              }
+            : {}),
+          ...(vehicleCompatibility.hasVehicleCompatibility
+            ? {
+                vehicleBrandId:
+                  vehicleCompatibility.vehicleBrandId,
+                vehicleModelId:
+                  vehicleCompatibility.vehicleModelId,
+                vehicleGenerationId:
+                  vehicleCompatibility.vehicleGenerationId,
+                vehicleCompatibilities:
+                  vehicleCompatibility.vehicleCompatibilities,
               }
             : {}),
           suppliers,
@@ -452,8 +458,7 @@ export async function PUT(
                   "",
               }
             : {}),
-          ...(!vehicleCompatibility.isMultimediaFrame ||
-          vehicleCompatibility.isUniversal
+          ...(!vehicleCompatibility.hasVehicleCompatibility
             ? {
                 vehicleBrandId: "",
                 vehicleModelId: "",
@@ -464,6 +469,11 @@ export async function PUT(
           ...(!vehicleCompatibility.isMultimediaFrame
             ? {
                 isUniversal: "",
+              }
+            : {}),
+          ...(!vehicleCompatibility.isMultimedia
+            ? {
+                isVehicleSpecific: "",
               }
             : {}),
         },

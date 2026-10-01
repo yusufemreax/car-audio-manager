@@ -195,6 +195,8 @@ interface ProductFormState {
 
   isUniversal: boolean;
 
+  isVehicleSpecific: boolean;
+
   vehicleCompatibilities: Array<{
     vehicleBrandId: string;
     vehicleModelId: string;
@@ -226,6 +228,7 @@ function createEmptyForm(): ProductFormState {
     specifications: {},
     description: "",
     isUniversal: false,
+    isVehicleSpecific: false,
     vehicleCompatibilities: [
       {
         vehicleBrandId: "",
@@ -949,6 +952,9 @@ export function ProductFormDialog({
 
         isUniversal:
           product.isUniversal === true,
+
+        isVehicleSpecific:
+          product.isVehicleSpecific === true,
 
         vehicleCompatibilities:
           product.vehicleCompatibilities?.length
@@ -1965,9 +1971,18 @@ export function ProductFormDialog({
       }
 
       if (
-        resolvedCategory ===
-          "multimedia-frame" &&
-        !form.isUniversal &&
+        (
+          (
+            resolvedCategory ===
+              "multimedia-frame" &&
+            !form.isUniversal
+          ) ||
+          (
+            resolvedCategory ===
+              "multimedia" &&
+            form.isVehicleSpecific
+          )
+        ) &&
         (
           form.vehicleCompatibilities.length ===
             0 ||
@@ -1979,13 +1994,20 @@ export function ProductFormDialog({
           )
         )
       ) {
-        return "Eklenen her araç için marka, model ve kasa/yıl seçimi zorunludur veya Universal seçilmelidir.";
+        return "Eklenen her araç için marka, model ve kasa/yıl seçimi zorunludur.";
       }
 
       if (
-        resolvedCategory ===
-          "multimedia-frame" &&
-        !form.isUniversal
+        (
+          resolvedCategory ===
+            "multimedia-frame" &&
+          !form.isUniversal
+        ) ||
+        (
+          resolvedCategory ===
+            "multimedia" &&
+          form.isVehicleSpecific
+        )
       ) {
         const generationIds =
           form.vehicleCompatibilities.map(
@@ -2450,6 +2472,29 @@ export function ProductFormDialog({
               isUniversal:
                 form.isUniversal,
               ...(!form.isUniversal
+                ? {
+                    vehicleCompatibilities:
+                      form.vehicleCompatibilities,
+                    vehicleBrandId:
+                      form.vehicleCompatibilities[0]
+                        .vehicleBrandId,
+                    vehicleModelId:
+                      form.vehicleCompatibilities[0]
+                        .vehicleModelId,
+                    vehicleGenerationId:
+                      form.vehicleCompatibilities[0]
+                        .vehicleGenerationId,
+                  }
+                : {}),
+            }
+          : {}),
+
+        ...(resolvedCategory ===
+        "multimedia"
+          ? {
+              isVehicleSpecific:
+                form.isVehicleSpecific,
+              ...(form.isVehicleSpecific
                 ? {
                     vehicleCompatibilities:
                       form.vehicleCompatibilities,
@@ -4156,22 +4201,30 @@ export function ProductFormDialog({
             })}
           </div>
 
-          {resolvedCategory ===
-            "multimedia-frame" && (
+          {(
+            resolvedCategory ===
+              "multimedia-frame" ||
+            resolvedCategory ===
+              "multimedia"
+          ) && (
             <div className="space-y-4 border-t pt-5">
               <div>
                 <h3 className="font-semibold">
                   Araç Uyumluluğu
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Çerçevenin uyumlu olduğu aracı katalogdan seçin. Tüm araçlara uyumlu ürünlerde Universal seçeneğini kullanın.
+                  {resolvedCategory === "multimedia-frame"
+                    ? "Çerçevenin uyumlu olduğu araçları katalogdan seçin. Tüm araçlara uyumlu ürünlerde Universal seçeneğini kullanın."
+                    : "Bu ekran yalnızca belirli araçlara uyuyorsa Araca özel seçeneğini işaretleyip uyumlu araçları ekleyin."}
                 </p>
               </div>
 
               <label className="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3">
                 <Checkbox
                   checked={
-                    form.isUniversal
+                    resolvedCategory === "multimedia-frame"
+                      ? form.isUniversal
+                      : form.isVehicleSpecific
                   }
                   disabled={submitting}
                   onCheckedChange={(value) => {
@@ -4181,8 +4234,13 @@ export function ProductFormDialog({
                     setForm(
                       (previous) => ({
                         ...previous,
-                        isUniversal:
-                          checked,
+                        ...(resolvedCategory === "multimedia-frame"
+                          ? {
+                              isUniversal: checked,
+                            }
+                          : {
+                              isVehicleSpecific: checked,
+                            }),
                         ...(checked
                           ? {
                               vehicleCompatibilities: [
@@ -4200,15 +4258,23 @@ export function ProductFormDialog({
                 />
                 <div>
                   <div className="text-sm font-medium">
-                    Universal Çerçeve
+                    {resolvedCategory === "multimedia-frame"
+                      ? "Universal Çerçeve"
+                      : "Araca özel mi?"}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    İşaretlenirse araç seçimi zorunlu değildir.
+                    {resolvedCategory === "multimedia-frame"
+                      ? "İşaretlenirse araç seçimi zorunlu değildir."
+                      : "İşaretlenirse uyumlu araç seçimi zorunludur."}
                   </div>
                 </div>
               </label>
 
-              {!form.isUniversal && (
+              {(
+                resolvedCategory === "multimedia-frame"
+                  ? !form.isUniversal
+                  : form.isVehicleSpecific
+              ) && (
                 <div className="space-y-3">
                   {form.vehicleCompatibilities.map(
                     (compatibility, index) => {

@@ -100,9 +100,22 @@ export async function GET(
         "compatibleVehicleGenerationId"
       );
 
-    if (compatibleVehicleGenerationId) {
+    const vehicleSpecificParam =
+      request.nextUrl.searchParams.get(
+        "vehicleSpecific"
+      );
+    const screenSizeParam =
+      cleanString(
+        request.nextUrl.searchParams.get(
+          "screenSize"
+        )
+      );
+
+    if (
+      category === "multimedia-frame" &&
+      compatibleVehicleGenerationId
+    ) {
       if (
-        category !== "multimedia-frame" ||
         !ObjectId.isValid(
           compatibleVehicleGenerationId
         )
@@ -138,6 +151,80 @@ export async function GET(
               (product) =>
                 product.isUniversal === true
             );
+    }
+
+    if (
+      category === "multimedia" &&
+      vehicleSpecificParam !== null
+    ) {
+      if (
+        vehicleSpecificParam !== "true" &&
+        vehicleSpecificParam !== "false"
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Geçersiz multimedya araç uyumluluğu filtresi.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const vehicleSpecific =
+        vehicleSpecificParam === "true";
+
+      if (
+        vehicleSpecific &&
+        (
+          !compatibleVehicleGenerationId ||
+          !ObjectId.isValid(
+            compatibleVehicleGenerationId
+          )
+        )
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Araca özel multimedya için geçerli bir araç kasa/yıl seçimi zorunludur.",
+          },
+          { status: 400 }
+        );
+      }
+
+      products =
+        products.filter(
+          (product) => {
+            if (vehicleSpecific) {
+              return (
+                product.isVehicleSpecific === true &&
+                (
+                  product.vehicleCompatibilities?.some(
+                    (compatibility) =>
+                      compatibility.vehicleGenerationId.toString() ===
+                      compatibleVehicleGenerationId
+                  ) === true ||
+                  product.vehicleGenerationId?.toString() ===
+                    compatibleVehicleGenerationId
+                )
+              );
+            }
+
+            if (
+              product.isVehicleSpecific === true
+            ) {
+              return false;
+            }
+
+            return (
+              !screenSizeParam ||
+              cleanString(
+                product.specifications?.screenSize
+              ) === screenSizeParam
+            );
+          }
+        );
     }
 
     return NextResponse.json({
@@ -353,18 +440,24 @@ export async function POST(
             ? {
                 isUniversal:
                   vehicleCompatibility.isUniversal,
-                ...(!vehicleCompatibility.isUniversal
-                  ? {
-                      vehicleBrandId:
-                        vehicleCompatibility.vehicleBrandId,
-                      vehicleModelId:
-                        vehicleCompatibility.vehicleModelId,
-                      vehicleGenerationId:
-                        vehicleCompatibility.vehicleGenerationId,
-                      vehicleCompatibilities:
-                        vehicleCompatibility.vehicleCompatibilities,
-                    }
-                  : {}),
+              }
+            : {}),
+          ...(vehicleCompatibility.isMultimedia
+            ? {
+                isVehicleSpecific:
+                  vehicleCompatibility.isVehicleSpecific,
+              }
+            : {}),
+          ...(vehicleCompatibility.hasVehicleCompatibility
+            ? {
+                vehicleBrandId:
+                  vehicleCompatibility.vehicleBrandId,
+                vehicleModelId:
+                  vehicleCompatibility.vehicleModelId,
+                vehicleGenerationId:
+                  vehicleCompatibility.vehicleGenerationId,
+                vehicleCompatibilities:
+                  vehicleCompatibility.vehicleCompatibilities,
               }
             : {}),
           suppliers,

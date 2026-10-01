@@ -57,15 +57,29 @@ export async function buildProductVehicleCompatibility(
       ? { ...body.specifications }
       : {};
 
-  if (category !== "multimedia-frame") {
+  const isMultimediaFrame =
+    category === "multimedia-frame";
+  const isMultimedia =
+    category === "multimedia";
+
+  if (
+    !isMultimediaFrame &&
+    !isMultimedia
+  ) {
     return {
       specifications,
       isMultimediaFrame: false as const,
+      isMultimedia: false as const,
+      hasVehicleCompatibility: false as const,
       isUniversal: false,
+      isVehicleSpecific: false,
     };
   }
 
-  if (body.isUniversal === true) {
+  if (
+    isMultimediaFrame &&
+    body.isUniversal === true
+  ) {
     specifications.vehicleBrand =
       "Universal";
     specifications.vehicleModel =
@@ -76,7 +90,28 @@ export async function buildProductVehicleCompatibility(
     return {
       specifications,
       isMultimediaFrame: true as const,
+      isMultimedia: false as const,
+      hasVehicleCompatibility: false as const,
       isUniversal: true,
+      isVehicleSpecific: false,
+    };
+  }
+
+  if (
+    isMultimedia &&
+    body.isVehicleSpecific !== true
+  ) {
+    delete specifications.vehicleBrand;
+    delete specifications.vehicleModel;
+    delete specifications.compatibleYears;
+
+    return {
+      specifications,
+      isMultimediaFrame: false as const,
+      isMultimedia: true as const,
+      hasVehicleCompatibility: false as const,
+      isUniversal: false,
+      isVehicleSpecific: false,
     };
   }
 
@@ -231,8 +266,12 @@ export async function buildProductVehicleCompatibility(
 
   return {
     specifications,
-    isMultimediaFrame: true as const,
+    isMultimediaFrame,
+    isMultimedia,
+    hasVehicleCompatibility: true as const,
     isUniversal: false,
+    isVehicleSpecific:
+      isMultimedia,
     vehicleBrandId:
       primaryCompatibility.vehicleBrandId,
     vehicleModelId:

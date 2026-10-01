@@ -61,6 +61,15 @@ function specificationText(
 export async function buildMultimediaPreparationData(
   body: MultimediaPreparationPayload
 ) {
+  if (
+    body.multimediaMode !== "framed" &&
+    body.multimediaMode !== "vehicle_specific"
+  ) {
+    throw new SystemPreparationBuildError(
+      "Çerçeveli veya Araca Özel multimedya tipi seçilmelidir."
+    );
+  }
+
   const brandId = toObjectId(
     cleanString(body.vehicleBrandId),
     "araç marka ID"
@@ -141,6 +150,23 @@ export async function buildMultimediaPreparationData(
   const products =
     await getProductsCollection();
 
+  const disallowedItem =
+    base.items.find(
+      (item) =>
+        body.multimediaMode === "framed"
+          ? item.category !== "multimedia" &&
+            item.category !== "multimedia-frame"
+          : item.category !== "multimedia"
+    );
+
+  if (disallowedItem) {
+    throw new SystemPreparationBuildError(
+      body.multimediaMode === "framed"
+        ? "Çerçeveli hazırlamada yalnızca multimedya ekran ve çerçeve kullanılabilir."
+        : "Araca özel hazırlamada yalnızca multimedya ekran kullanılabilir."
+    );
+  }
+
   const frameItems =
     base.items.filter(
       (item) =>
@@ -148,6 +174,18 @@ export async function buildMultimediaPreparationData(
           "multimedia-frame" &&
         Boolean(item.productId)
     );
+
+  if (
+    body.multimediaMode ===
+      "vehicle_specific" &&
+    frameItems.length > 0
+  ) {
+    throw new SystemPreparationBuildError(
+      "Araca özel multimedya hazırlamada çerçeve seçilemez."
+    );
+  }
+
+  let selectedFrameSize = "";
 
   if (frameItems.length > 0) {
     const exactFrameCount =
@@ -207,6 +245,29 @@ export async function buildMultimediaPreparationData(
             : "Bu araç için özel çerçeve bulunamadı. Universal çerçeve seçin."
         );
       }
+
+      const frameSize =
+        specificationText(
+          frame.specifications ?? {},
+          "size"
+        );
+
+      if (!frameSize) {
+        throw new SystemPreparationBuildError(
+          "Seçilen multimedya çerçevesinin boyut bilgisi bulunamadı."
+        );
+      }
+
+      if (
+        selectedFrameSize &&
+        selectedFrameSize !== frameSize
+      ) {
+        throw new SystemPreparationBuildError(
+          "Seçilen çerçevelerin boyutları birbiriyle uyumlu değil."
+        );
+      }
+
+      selectedFrameSize = frameSize;
     }
   }
 
@@ -239,11 +300,68 @@ export async function buildMultimediaPreparationData(
         ? multimediaProduct.specifications as Record<string, unknown>
         : {};
 
+    if (!multimediaProduct) {
+      throw new SystemPreparationBuildError(
+        "Seçilen multimedya ekran ürünü bulunamadı.",
+        404
+      );
+    }
+
+    if (
+      body.multimediaMode === "framed"
+    ) {
+      if (
+        multimediaProduct.isVehicleSpecific ===
+        true
+      ) {
+        throw new SystemPreparationBuildError(
+          "Çerçeveli hazırlamada araca özel olmayan bir multimedya ekran seçin."
+        );
+      }
+
+      if (!selectedFrameSize) {
+        throw new SystemPreparationBuildError(
+          "Multimedya ekran seçmeden önce çerçeve seçin."
+        );
+      }
+    } else {
+      const isVehicleCompatible =
+        multimediaProduct.isVehicleSpecific ===
+          true &&
+        (
+          multimediaProduct.vehicleCompatibilities?.some(
+            (compatibility) =>
+              compatibility.vehicleGenerationId.equals(
+                generationId
+              )
+          ) === true ||
+          multimediaProduct.vehicleGenerationId?.equals(
+            generationId
+          ) === true
+        );
+
+      if (!isVehicleCompatible) {
+        throw new SystemPreparationBuildError(
+          "Seçilen multimedya ekran bu araca özel olarak tanımlı değil."
+        );
+      }
+    }
+
     multimediaScreenSize =
       specificationText(
         specifications,
         "screenSize"
       );
+
+    if (
+      body.multimediaMode === "framed" &&
+      multimediaScreenSize !==
+        selectedFrameSize
+    ) {
+      throw new SystemPreparationBuildError(
+        `Seçilen ekran ${multimediaScreenSize || "boyutsuz"}, çerçeve ise ${selectedFrameSize} inç. Aynı boyutta ürün seçin.`
+      );
+    }
     multimediaRam =
       specificationText(
         specifications,
@@ -259,6 +377,8 @@ export async function buildMultimediaPreparationData(
   return {
     ...base,
     name: autoName,
+    multimediaMode:
+      body.multimediaMode,
     vehicleBrandId: brandId,
     vehicleBrandName: brand.name,
     vehicleModelId: modelId,

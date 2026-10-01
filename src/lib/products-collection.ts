@@ -30,6 +30,7 @@ export interface ProductDocument {
   priceUsd: number;
   category: ProductCategory;
   isUniversal?: boolean;
+  isVehicleSpecific?: boolean;
   vehicleBrandId?: ObjectId;
   vehicleModelId?: ObjectId;
   vehicleGenerationId?: ObjectId;
@@ -148,6 +149,12 @@ export function serializeProduct(
       ? {
           isUniversal:
             product.isUniversal,
+        }
+      : {}),
+    ...(typeof product.isVehicleSpecific === "boolean"
+      ? {
+          isVehicleSpecific:
+            product.isVehicleSpecific,
         }
       : {}),
     ...(product.vehicleBrandId
