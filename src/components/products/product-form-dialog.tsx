@@ -1088,8 +1088,12 @@ export function ProductFormDialog({
   useEffect(() => {
     if (
       !open ||
-      resolvedCategory !==
-        "multimedia-frame"
+      (
+        resolvedCategory !==
+          "multimedia-frame" &&
+        resolvedCategory !==
+          "multimedia"
+      )
     ) {
       return;
     }
