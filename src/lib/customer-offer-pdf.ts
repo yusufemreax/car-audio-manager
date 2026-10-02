@@ -97,6 +97,7 @@ interface PdfCustomerVehicle {
   id: string;
   brand: string;
   model: string;
+  vehicleGenerationName?: string;
   year?: number;
   plate?: string;
 }
@@ -111,7 +112,7 @@ interface PdfCustomerContext {
   customerName: string;
   vehicleBrand: string;
   vehicleModel: string;
-  vehicleYear?: number;
+  vehicleGenerationName: string;
 }
 
 /*
@@ -599,13 +600,9 @@ async function getOfferCustomerContext(
       vehicleModel:
         vehicle?.model ??
         "-",
-      ...(typeof vehicle?.year ===
-      "number"
-        ? {
-            vehicleYear:
-              vehicle.year,
-          }
-        : {}),
+      vehicleGenerationName:
+        vehicle?.vehicleGenerationName ??
+        "-",
     };
   } catch (error) {
     console.error(
@@ -619,6 +616,8 @@ async function getOfferCustomerContext(
       vehicleBrand:
         "-",
       vehicleModel:
+        "-",
+      vehicleGenerationName:
         "-",
     };
   }
@@ -1066,22 +1065,25 @@ async function buildCustomerOfferDocument(
     ),
   ]);
 
+  /*
+   * =======================================================
+   * CUSTOMER OFFER VEHICLE BRAND MODEL GENERATION V2.17
+   * =======================================================
+   * PDF ve bu PDF'den uretilen JPG ciktisinda arac bilgisi:
+   * Marka - Model - Kasa
+   */
   const vehicleText =
     [
       customerContext.vehicleBrand,
       customerContext.vehicleModel,
-      customerContext.vehicleYear
-        ? String(
-            customerContext.vehicleYear
-          )
-        : "",
+      customerContext.vehicleGenerationName,
     ]
       .filter(
         (value) =>
           value &&
           value !== "-"
       )
-      .join(" ") ||
+      .join(" - ") ||
     "-";
 
   /*
