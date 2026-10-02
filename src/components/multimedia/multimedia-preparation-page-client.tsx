@@ -237,6 +237,56 @@ function createCustomSlotId() {
 
 /*
  * =========================================================
+ * MULTIMEDIA AUTO FRAME + DEFAULTS V2.16
+ * =========================================================
+ */
+
+function createDefaultMultimediaLaborItems(): SystemLaborItem[] {
+  return [
+    {
+      id: createCustomSlotId(),
+      label: "Multimedya \u0130\u015f\u00e7ili\u011fi",
+      amountTry: 1500,
+      sortOrder: 0,
+    },
+  ];
+}
+
+interface AvailableProductSelection {
+  product: Product;
+  supplier: ProductSupplier;
+  priceUsd: number;
+}
+
+function getAvailableProductSelections(
+  sourceProducts: Product[]
+): AvailableProductSelection[] {
+  return sourceProducts.flatMap((product) => {
+    const supplierPrices =
+      product.supplierPrices?.length
+        ? product.supplierPrices
+        : (
+            product.suppliers?.length
+              ? product.suppliers
+              : (["EGB"] as ProductSupplier[])
+          ).map((supplier) => ({
+            supplier,
+            priceUsd: product.priceUsd,
+            sourceUnavailable: product.sourceUnavailable,
+          }));
+
+    return supplierPrices
+      .filter((item) => item.sourceUnavailable !== true)
+      .map((item) => ({
+        product,
+        supplier: item.supplier,
+        priceUsd: Number(item.priceUsd) || 0,
+      }));
+  });
+}
+
+/*
+ * =========================================================
  * COMPONENT
  * =========================================================
  */
@@ -305,7 +355,10 @@ export function MultimediaPreparationPageClient() {
   ] =
     useState<
       SystemLaborItem[]
-    >([]);
+    >(
+      () =>
+        createDefaultMultimediaLaborItems()
+    );
 
   const [
     products,
@@ -332,7 +385,7 @@ export function MultimediaPreparationPageClient() {
   const [
     commissionRate,
     setCommissionRate,
-  ] = useState("0");
+  ] = useState("20");
 
   const [
     discountTry,
@@ -1269,6 +1322,147 @@ export function MultimediaPreparationPageClient() {
    * =======================================================
    */
 
+
+  /*
+   * =========================================================
+   * MULTIMEDIA AUTO FRAME + DEFAULTS V2.16 - AUTO FRAME
+   * =========================================================
+   */
+  useEffect(() => {
+    if (
+      multimediaMode !== "framed" ||
+      !selectedVehicleGenerationId ||
+      editingPreparation
+    ) {
+      return;
+    }
+
+    const frameSlot =
+      slots.find(
+        (slot) =>
+          slot.category ===
+          "multimedia-frame"
+      ) ?? null;
+
+    if (!frameSlot || frameSlot.product) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const autoSelectSingleFrame = async () => {
+      try {
+        const params = new URLSearchParams({
+          category: "multimedia-frame",
+          compatibleVehicleGenerationId:
+            selectedVehicleGenerationId,
+        });
+
+        const response = await fetch(
+          `/api/products?${params.toString()}`,
+          { cache: "no-store" }
+        );
+
+        const result: ApiResponse<Product[]> =
+          await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(
+            result.message ??
+              "Uyumlu cerceveler alinamadi."
+          );
+        }
+
+        const frameProducts = result.data ?? [];
+
+        if (cancelled) {
+          return;
+        }
+
+        setProducts((previous) => [
+          ...previous.filter(
+            (product) =>
+              product.category !==
+              "multimedia-frame"
+          ),
+          ...frameProducts,
+        ]);
+
+        const availableSelections =
+          getAvailableProductSelections(
+            frameProducts
+          );
+
+        if (availableSelections.length !== 1) {
+          return;
+        }
+
+        const onlySelection =
+          availableSelections[0];
+        const nextFrameSize = String(
+          onlySelection.product.specifications
+            ?.size ?? ""
+        ).trim();
+
+        setSlots((previous) =>
+          previous.map((slot) => {
+            if (slot.id === frameSlot.id) {
+              return {
+                ...slot,
+                product: onlySelection.product,
+                selectedSupplier:
+                  onlySelection.supplier,
+                selectedPriceUsd:
+                  onlySelection.priceUsd,
+              };
+            }
+
+            if (
+              slot.category === "multimedia" &&
+              slot.product &&
+              String(
+                slot.product.specifications
+                  ?.screenSize ?? ""
+              ).trim() !== nextFrameSize
+            ) {
+              return {
+                ...slot,
+                product: null,
+                selectedSupplier: undefined,
+                selectedPriceUsd: undefined,
+              };
+            }
+
+            return slot;
+          })
+        );
+
+        setSuccessMessage(null);
+      } catch (autoSelectError) {
+        if (cancelled) {
+          return;
+        }
+
+        setError(
+          autoSelectError instanceof Error
+            ? autoSelectError.message
+            : "Uyumlu cerceveler alinamadi."
+        );
+      }
+    };
+
+    void autoSelectSingleFrame();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    multimediaMode,
+    selectedVehicleGenerationId,
+    editingPreparation,
+    slots,
+  ]);
+
   const removeCustomSlot = (
     slotId: string
   ) => {
@@ -1984,7 +2178,9 @@ export function MultimediaPreparationPageClient() {
           )
         );
 
-        setLaborItems([]);
+        setLaborItems(
+          createDefaultMultimediaLaborItems()
+        );
 
         setCurrentPreparationId(
           null
@@ -2020,7 +2216,7 @@ export function MultimediaPreparationPageClient() {
         }
 
         setCommissionRate(
-          "0"
+          "20"
         );
 
         setDiscountTry(
