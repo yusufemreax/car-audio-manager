@@ -19,6 +19,8 @@ import type {
   MultimediaPreparationPayload,
 } from "@/types/multimedia-preparation";
 
+import { calculateMultimediaAutoDiscount } from "@/lib/multimedia-auto-discount";
+
 export {
   SystemPreparationBuildError,
 };
@@ -69,6 +71,11 @@ export async function buildMultimediaPreparationData(
       "Çerçeveli veya Araca Özel multimedya tipi seçilmelidir."
     );
   }
+
+  if (body.automaticDiscount !== undefined && typeof body.automaticDiscount !== "boolean") {
+    throw new SystemPreparationBuildError("Otomatik indirim seçimi geçersiz.");
+  }
+  const automaticDiscount = body.automaticDiscount !== false;
 
   const brandId = toObjectId(
     cleanString(body.vehicleBrandId),
@@ -146,6 +153,14 @@ export async function buildMultimediaPreparationData(
       ...body,
       name: autoName,
     });
+
+  if (automaticDiscount) {
+    base.discountTry = calculateMultimediaAutoDiscount(
+      base.productTotalTry + base.commissionAmountTry + base.laborCostTry
+    );
+    base.profitTry = base.commissionAmountTry + base.laborCostTry - base.discountTry;
+    base.customerTotalTry = base.productTotalTry + base.profitTry;
+  }
 
   const products =
     await getProductsCollection();
@@ -376,6 +391,7 @@ export async function buildMultimediaPreparationData(
 
   return {
     ...base,
+    automaticDiscount,
     name: autoName,
     multimediaMode:
       body.multimediaMode,

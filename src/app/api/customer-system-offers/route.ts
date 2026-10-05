@@ -1,3 +1,4 @@
+import { refreshMultimediaForOffers } from "@/lib/multimedia-offer-refresh";
 import {
   ObjectId,
 } from "mongodb";
@@ -300,15 +301,16 @@ export async function POST(
         );
       }
 
+      const [refreshedMultimedia] = await refreshMultimediaForOffers([multimedia]);
       sourceId = multimedia._id;
       systemSnapshot =
         serializeMultimediaPreparation(
-          multimedia
+          refreshedMultimedia
         );
       sourceCustomerTotalTry =
-        multimedia.customerTotalTry;
+        refreshedMultimedia.customerTotalTry;
       sourceProfitTry =
-        multimedia.profitTry;
+        refreshedMultimedia.profitTry;
     } else {
       const systems =
         await getSystemPreparationsCollection();

@@ -9,6 +9,7 @@ export type MultimediaPreparationMode =
 
 export interface MultimediaPreparation
   extends SystemPreparation {
+  automaticDiscount?: boolean;
   multimediaMode: MultimediaPreparationMode;
   vehicleBrandId: string;
   vehicleBrandName: string;
@@ -28,6 +29,7 @@ export interface MultimediaPreparation
 
 export interface MultimediaPreparationPayload
   extends Omit<SystemPreparationPayload, "name"> {
+  automaticDiscount?: boolean;
   multimediaMode: MultimediaPreparationMode;
   vehicleBrandId: string;
   vehicleModelId: string;

@@ -20,6 +20,7 @@ import type {
 
 export interface MultimediaPreparationDocument
   extends SystemPreparationDocument {
+  automaticDiscount?: boolean;
   multimediaMode?: MultimediaPreparationMode;
   vehicleBrandId: ObjectId;
   vehicleBrandName: string;
@@ -87,6 +88,7 @@ export function serializeMultimediaPreparation(
 
   return {
     ...base,
+    automaticDiscount: preparation.automaticDiscount !== false,
     multimediaMode:
       preparation.multimediaMode ??
       (

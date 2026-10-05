@@ -58,6 +58,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+import { calculateMultimediaAutoDiscount } from "@/lib/multimedia-auto-discount";
+
 import {
   Input,
 } from "@/components/ui/input";
@@ -386,6 +388,8 @@ export function MultimediaPreparationPageClient() {
     commissionRate,
     setCommissionRate,
   ] = useState("20");
+
+  const [automaticDiscount, setAutomaticDiscount] = useState(true);
 
   const [
     discountTry,
@@ -1080,6 +1084,8 @@ export function MultimediaPreparationPageClient() {
             )
           );
 
+          setAutomaticDiscount(preparation.automaticDiscount !== false);
+
           setDiscountTry(
             String(
               preparation.discountTry ??
@@ -1688,8 +1694,9 @@ export function MultimediaPreparationPageClient() {
   /*
    * İNDİRİM TL
    */
-  const discountTryNumber =
-    Math.max(
+  const discountTryNumber = automaticDiscount
+    ? calculateMultimediaAutoDiscount(productTotalTry + commissionAmountTry + laborCostTry)
+    : Math.max(
       0,
       Number(
         discountTry
@@ -1842,6 +1849,7 @@ export function MultimediaPreparationPageClient() {
         commissionRate:
           commissionRateNumber,
 
+        automaticDiscount,
         discountTry:
           discountTryNumber,
 
@@ -2219,6 +2227,7 @@ export function MultimediaPreparationPageClient() {
           "20"
         );
 
+        setAutomaticDiscount(true);
         setDiscountTry(
           "0"
         );
@@ -3329,6 +3338,19 @@ export function MultimediaPreparationPageClient() {
                 =========================================== */}
 
                 <div className="space-y-2">
+                  <label className="flex items-center gap-2" htmlFor="automaticDiscount">
+                    <input
+                      id="automaticDiscount"
+                      type="checkbox"
+                      checked={automaticDiscount}
+                      onChange={(event) => {
+                        if (!event.target.checked) setDiscountTry(String(discountTryNumber));
+                        setAutomaticDiscount(event.target.checked);
+                        setSuccessMessage(null);
+                      }}
+                    />
+                    Otomatik indirim
+                  </label>
                   <Label htmlFor="discountTry">
                     İndirim Tutarı
                     (TL)
@@ -3341,12 +3363,11 @@ export function MultimediaPreparationPageClient() {
 
                     <Input
                       id="discountTry"
+                      readOnly={automaticDiscount}
                       type="number"
                       min="0"
                       step="0.01"
-                      value={
-                        discountTry
-                      }
+                      value={automaticDiscount ? discountTryNumber : discountTry}
                       onChange={(
                         event
                       ) => {

@@ -1,3 +1,4 @@
+import { refreshMultimediaForOffers } from "@/lib/multimedia-offer-refresh";
 import {
   ObjectId,
 } from "mongodb";
@@ -210,9 +211,10 @@ export async function POST(
       });
     }
 
+    const refreshedMultimedias = await refreshMultimediaForOffers(newMultimedias);
     const now = new Date();
     const documents =
-      newMultimedias.map(
+      refreshedMultimedias.map(
         (multimedia) => ({
           offerType:
             "multimedia" as const,

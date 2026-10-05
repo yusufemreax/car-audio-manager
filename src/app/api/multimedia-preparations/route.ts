@@ -1,3 +1,4 @@
+import { calculateMultimediaAutoDiscount } from "@/lib/multimedia-auto-discount";
 import {
   ObjectId,
 } from "mongodb";
@@ -209,10 +210,6 @@ async function refreshReadySystemsWithCurrentRate(
             preparation
           );
 
-        const discountTry =
-          safeNumber(
-            preparation.discountTry
-          );
 
         const productTotalTry =
           productTotalUsd *
@@ -260,6 +257,10 @@ async function refreshReadySystemsWithCurrentRate(
         const commissionAmountTry =
           commissionAmountUsd *
           exchangeRate;
+
+        const discountTry = preparation.automaticDiscount !== false
+          ? calculateMultimediaAutoDiscount(productTotalTry + commissionAmountTry + laborCostTry)
+          : safeNumber(preparation.discountTry);
 
         const profitTry =
           commissionAmountTry +
