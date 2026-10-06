@@ -30,6 +30,9 @@ export interface CustomerSystemOfferDocument {
 
   extraDiscountTry: number;
 
+  bargainingDiscountTry?: number;
+  installationCancelledAt?: Date;
+
   finalCustomerTotalTry: number;
 
   finalProfitTry: number;
@@ -119,6 +122,9 @@ export function serializeCustomerSystemOffer(
 
     extraDiscountTry:
       document.extraDiscountTry,
+
+    bargainingDiscountTry: document.bargainingDiscountTry ?? 0,
+    installationCancelledAt: document.installationCancelledAt?.toISOString(),
 
     finalCustomerTotalTry:
       document.finalCustomerTotalTry,

@@ -54,6 +54,9 @@ export interface CustomerSystemOffer {
 
   extraDiscountTry: number;
 
+  bargainingDiscountTry?: number;
+  installationCancelledAt?: string;
+
   finalCustomerTotalTry: number;
 
   finalProfitTry: number;

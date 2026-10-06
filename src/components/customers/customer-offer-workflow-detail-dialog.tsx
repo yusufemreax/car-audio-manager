@@ -952,6 +952,13 @@ export function CustomerOfferWorkflowDetailDialog({
                 </div>
               </div>
 
+              {(offer.bargainingDiscountTry ?? 0) > 0 && (
+                <div className="rounded-xl border bg-muted/20 p-4">
+                  <div className="text-xs text-muted-foreground">Pazarlık Payı</div>
+                  <div className="mt-1 font-semibold">{formatTry(offer.bargainingDiscountTry ?? 0)}</div>
+                </div>
+              )}
+
               {status ===
                 "order_pending" && (
                 <div className="space-y-5">

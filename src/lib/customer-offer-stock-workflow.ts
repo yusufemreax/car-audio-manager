@@ -105,6 +105,9 @@ interface CustomerSystemOfferDocument {
   status: string;
   systemSnapshot: OfferSnapshotDocument;
   finalCustomerTotalTry?: number;
+  finalProfitTry?: number;
+  bargainingDiscountTry?: number;
+  installationCancelledAt?: Date;
 
   stockRequirements?: CustomerOfferStockRequirement[];
   stockDeductedAt?: Date;
@@ -751,6 +754,7 @@ function serializeOffer(
       serializeDate(
         rest.completedAt
       ),
+    installationCancelledAt: serializeDate(rest.installationCancelledAt),
     ...(rest.customerPayment
       ? {
           customerPayment:
@@ -1010,6 +1014,7 @@ async function claimPaymentOffer(
           $exists:
             false,
         },
+        stockProcessingToken: { $exists: false },
       },
       {
         $set: {
@@ -2130,7 +2135,10 @@ async function completeOrderAndConsumeStock(
               "installation_pending",
             stockRequirements:
               refreshedRequirements,
-            orderSupplierPayments,
+            orderSupplierPayments: [
+              ...(offer.orderSupplierPayments ?? []),
+              ...orderSupplierPayments,
+            ],
             stockDeductedAt:
               now,
             installationPendingAt:
@@ -2227,6 +2235,28 @@ async function completeOrderAndConsumeStock(
 
     throw error;
   }
+}
+
+function buildNegotiatedOffer(
+  offer: WithId<CustomerSystemOfferDocument>,
+  payment: CustomerOfferCompletionPayment | undefined
+): WithId<CustomerSystemOfferDocument> {
+  const rawDiscount = payment?.bargainingDiscountTry ?? 0;
+  const total = safeMoney(offer.finalCustomerTotalTry);
+  if (typeof rawDiscount !== "number" || !Number.isFinite(rawDiscount) || rawDiscount < 0 || rawDiscount > total) {
+    throw new CustomerOfferWorkflowError("Pazarlık payı 0 ile teklif tutarı arasında olmalıdır.", 400);
+  }
+  const discount = roundMoney(rawDiscount);
+  const finalProfit = Number(offer.finalProfitTry);
+  if (!Number.isFinite(finalProfit)) {
+    throw new CustomerOfferWorkflowError("Teklif kazanç bilgisi geçersiz.", 400);
+  }
+  return {
+    ...offer,
+    bargainingDiscountTry: discount,
+    finalCustomerTotalTry: roundMoney(total - discount),
+    finalProfitTry: roundMoney(finalProfit - discount),
+  };
 }
 
 function buildCustomerPayment(
@@ -2415,9 +2445,10 @@ async function completeSale(
     undefined,
   now: Date
 ) {
+  const negotiatedOffer = buildNegotiatedOffer(offer, paymentInput);
   const payment =
     buildCustomerPayment(
-      offer,
+      negotiatedOffer,
       paymentInput,
       now
     );
@@ -2461,6 +2492,9 @@ async function completeSale(
               "sold",
             customerPayment:
               payment,
+            bargainingDiscountTry: negotiatedOffer.bargainingDiscountTry,
+            finalCustomerTotalTry: negotiatedOffer.finalCustomerTotalTry,
+            finalProfitTry: negotiatedOffer.finalProfitTry,
             soldAt:
               now,
             completedAt:
@@ -3161,6 +3195,90 @@ export async function getCustomerOfferWorkflowDetail(
   };
 }
 
+async function cancelInstallation(
+  db: Db,
+  offersCollection: Collection<CustomerSystemOfferDocument>,
+  inventoryCollection: Collection<InventoryDocument>,
+  offerId: ObjectId,
+  now: Date
+): Promise<CustomerOfferWorkflowResult> {
+  const reset = {
+    $set: { status: "offered", installationCancelledAt: now, updatedAt: now },
+    $unset: {
+      stockRequirements: "", orderPendingAt: "", installationPendingAt: "",
+      stockDeductedAt: "", soldAt: "", completedAt: "",
+    },
+  } as const;
+  const filter = {
+    _id: offerId,
+    status: "installation_pending",
+    stockProcessingToken: { $exists: false },
+    paymentProcessingToken: { $exists: false },
+    customerPayment: { $exists: false },
+  };
+  let cancelled = await offersCollection.findOneAndUpdate(
+    { ...filter, stockDeductedAt: { $not: { $type: "date" } } },
+    reset,
+    { returnDocument: "after" }
+  );
+  if (!cancelled) {
+    const current = await offersCollection.findOne({ _id: offerId });
+    if (!current) throw new CustomerOfferWorkflowError("Teklif bulunamadı.", 404);
+    if (current.status === "offered" && current.installationCancelledAt) {
+      return { offer: serializeOffer(current), stockRequirements: [], message: "Montaj zaten iptal edilmiş." };
+    }
+    if (current.status !== "installation_pending" || current.customerPayment || current.stockProcessingToken || current.paymentProcessingToken) {
+      throw new CustomerOfferWorkflowError("Yalnızca işlem yapılmayan Montaj Bekliyor teklifi iptal edilebilir.", 409);
+    }
+    if (!current.stockDeductedAt) {
+      throw new CustomerOfferWorkflowError("Teklif durumu değişti. Lütfen yenileyip tekrar deneyin.", 409);
+    }
+    // Legacy pending records may already have a stock exit. Restore those products
+    // and reset the offer in one transaction, so retries cannot increase stock twice.
+    const session = db.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const legacy = await offersCollection.findOneAndUpdate(
+          { ...filter, stockDeductedAt: { $type: "date" } },
+          reset,
+          { returnDocument: "before", session }
+        );
+        if (!legacy) throw new CustomerOfferWorkflowError("Teklif durumu değişti. Montaj iptal edilemedi.", 409);
+        for (const product of getRequiredProducts(legacy)) {
+          const candidates = getProductIdCandidates([product.productId]);
+          const inventory = await inventoryCollection.findOne({ productId: { $in: candidates } }, { session });
+          const previousQuantity = Number(inventory?.quantity ?? 0);
+          if (inventory) {
+            await inventoryCollection.updateOne(
+              { _id: inventory._id },
+              { $inc: { quantity: product.requiredQuantity }, $set: { updatedAt: now } },
+              { session }
+            );
+          } else {
+            await inventoryCollection.insertOne({
+              productId: product.productId, quantity: product.requiredQuantity, createdAt: now, updatedAt: now,
+            }, { session });
+          }
+          await db.collection<StockMovementDocument>(STOCK_MOVEMENTS_COLLECTION).insertOne({
+            productId: product.productId, type: "in", quantity: product.requiredQuantity,
+            previousQuantity, newQuantity: previousQuantity + product.requiredQuantity,
+            note: `Montaj iptali - önceki stok çıkışı geri alındı: ${offerId}`,
+            offerId: offerId.toString(), createdAt: now,
+          }, { session });
+        }
+        cancelled = await offersCollection.findOne({ _id: offerId }, { session });
+      });
+    } finally {
+      await session.endSession();
+    }
+  }
+  if (!cancelled) throw new CustomerOfferWorkflowError("İptal edilen teklif okunamadı.", 500);
+  return {
+    offer: serializeOffer(cancelled), stockRequirements: [],
+    message: "Montaj iptal edildi. Teklif ilk aşamaya döndü; malzemeler stokta ve ödeme kayıtları korunuyor.",
+  };
+}
+
 export async function runCustomerOfferWorkflow(
   id: string,
   action: CustomerOfferWorkflowAction,
@@ -3169,6 +3287,10 @@ export async function runCustomerOfferWorkflow(
   const offerId = getOfferObjectId(id);
   const { db, offersCollection, inventoryCollection } = await getCollections();
   const now = new Date();
+
+  if (action === "cancel-installation") {
+    return cancelInstallation(db, offersCollection, inventoryCollection, offerId, now);
+  }
 
   /*
    * complete-sale artık iki aşamalıdır:
@@ -3198,6 +3320,8 @@ export async function runCustomerOfferWorkflow(
         409
       );
     }
+
+    buildCustomerPayment(buildNegotiatedOffer(currentOffer, options.payment), options.payment, now);
 
     if (!currentOffer.stockDeductedAt) {
       const stockToken = randomUUID();

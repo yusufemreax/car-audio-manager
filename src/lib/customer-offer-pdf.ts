@@ -1254,11 +1254,12 @@ async function buildCustomerOfferDocument(
 
   /*
    * PDF'de tek "İndirim Tutarı"
-   * gösterileceği için ikisini topluyoruz.
+   * gösterileceği için hazırlama, ek indirim ve pazarlık payını topluyoruz.
    */
   const totalDiscountTry =
     systemDiscountTry +
-    customerDiscountTry;
+    customerDiscountTry +
+    (Number(offer.bargainingDiscountTry) || 0);
 
   /*
    * CustomerSystemOffer kaydındaki gerçek

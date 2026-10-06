@@ -249,7 +249,10 @@ export function CustomerOfferPaymentDialog({
     null
   );
 
-  const totalTry =
+  const [bargainingDiscountTry, setBargainingDiscountTry] = useState("0");
+  const bargainingDiscountNumber = toNumber(bargainingDiscountTry);
+
+  const originalTotalTry =
     Math.max(
       0,
       Number(
@@ -257,6 +260,8 @@ export function CustomerOfferPaymentDialog({
           0
       ) || 0
     );
+
+  const totalTry = roundMoney(Math.max(0, originalTotalTry - bargainingDiscountNumber));
 
   const previousCustomerCardAmountTry =
     useMemo(
@@ -353,8 +358,10 @@ export function CustomerOfferPaymentDialog({
       return;
     }
 
+    setBargainingDiscountTry("0");
+    const initialCardTry = Math.min(originalTotalTry, previousCustomerCardAmountTry);
     setPaymentMethod(
-      previousCardAppliedTry > 0
+      initialCardTry > 0
         ? "prepaid_card"
         : "cash"
     );
@@ -363,9 +370,9 @@ export function CustomerOfferPaymentDialog({
     );
     setCardAmountTry(
       roundMoney(
-        previousCardAppliedTry > 0
-          ? previousCardAppliedTry
-          : totalTry
+        initialCardTry > 0
+          ? initialCardTry
+          : originalTotalTry
       ).toFixed(2)
     );
     setCardAmountUsd("");
@@ -440,12 +447,7 @@ export function CustomerOfferPaymentDialog({
             result.data.date ??
               null
           );
-          setCardAmountUsd(
-            roundMoney(
-              totalTry /
-                rate
-            ).toFixed(2)
-          );
+
         } catch (rateError) {
           if (cancelled) {
             return;
@@ -474,9 +476,21 @@ export function CustomerOfferPaymentDialog({
   }, [
     open,
     offer?.id,
-    totalTry,
-    previousCardAppliedTry,
+    originalTotalTry,
+    previousCustomerCardAmountTry,
   ]);
+
+  useEffect(() => {
+    if (open && paymentMethod === "prepaid_card" && previousCustomerCardAmountTry > 0) {
+      setCardAmountTry(roundMoney(previousCardAppliedTry).toFixed(2));
+    }
+  }, [open, paymentMethod, previousCustomerCardAmountTry, previousCardAppliedTry]);
+
+  useEffect(() => {
+    if (open && exchangeRate && exchangeRate > 0) {
+      setCardAmountUsd(roundMoney(cardTryNumber / exchangeRate).toFixed(2));
+    }
+  }, [open, exchangeRate, cardTryNumber]);
 
   const handleCardTryChange =
     (
@@ -517,6 +531,12 @@ export function CustomerOfferPaymentDialog({
         null
       );
 
+      const rawBargaining = Number(bargainingDiscountTry.trim().replace(",", "."));
+      if (!Number.isFinite(rawBargaining) || rawBargaining < 0 || rawBargaining > originalTotalTry) {
+        setError("Pazarlık payı 0 ile teklif tutarı arasında olmalıdır.");
+        return;
+      }
+
       if (
         shippingFeeNumber < 0
       ) {
@@ -534,6 +554,7 @@ export function CustomerOfferPaymentDialog({
           await onSubmit({
             method:
               "cash",
+            bargainingDiscountTry: roundMoney(bargainingDiscountNumber),
             cardAmountTry:
               0,
             cardAmountUsd:
@@ -590,6 +611,7 @@ export function CustomerOfferPaymentDialog({
       if (paymentMethod === "prepaid_card") {
         const saved = await onSubmit({
           method: "prepaid_card",
+          bargainingDiscountTry: roundMoney(bargainingDiscountNumber),
           cardAmountTry: roundMoney(cardTryNumber),
           cardAmountUsd: 0,
           cashAmountTry,
@@ -615,6 +637,7 @@ export function CustomerOfferPaymentDialog({
         await onSubmit({
           method:
             "card",
+          bargainingDiscountTry: roundMoney(bargainingDiscountNumber),
           supplier,
           cardAmountTry:
             roundMoney(
@@ -681,13 +704,38 @@ export function CustomerOfferPaymentDialog({
         <div className="space-y-5">
           <div className="rounded-xl border bg-muted/20 p-4">
             <div className="text-xs text-muted-foreground">
-              Müşteri Teklif Tutarı
+              Toplam Alacak
             </div>
             <div className="mt-1 text-xl font-semibold">
               {formatTry(
                 totalTry
               )}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="bargainingDiscountTry">Pazarlık Payı (TL)</Label>
+            <Input
+              id="bargainingDiscountTry"
+              type="number"
+              min="0"
+              max={originalTotalTry}
+              step="0.01"
+              value={bargainingDiscountTry}
+              disabled={submitting}
+              onChange={(event) => {
+                const value = event.target.value;
+                setBargainingDiscountTry(value);
+                const nextTotal = roundMoney(Math.max(0, originalTotalTry - toNumber(value)));
+                if (paymentMethod === "card" && cardTryNumber > nextTotal) {
+                  handleCardTryChange(nextTotal.toFixed(2));
+                }
+                setError(null);
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Teklif tutarı: {formatTry(originalTotalTry)}. Pazarlık payı toplam alacaktan düşülür.
+            </p>
           </div>
 
           <div className="space-y-2">

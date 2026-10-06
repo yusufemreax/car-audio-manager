@@ -12,7 +12,8 @@ export type CustomerOfferWorkflowStage =
 export type CustomerOfferWorkflowAction =
   | "start-sale"
   | "order-completed"
-  | "complete-sale";
+  | "complete-sale"
+  | "cancel-installation";
 
 export interface CustomerOfferStockRequirement {
   productId: string;
@@ -75,6 +76,8 @@ export type CustomerOfferPaymentMethod =
 
 export interface CustomerOfferCompletionPayment {
   method: CustomerOfferPaymentMethod;
+  /** Montaj tamamlanırken kabul edilen ek pazarlık indirimi (TL). */
+  bargainingDiscountTry?: number;
   supplier?: ProductSupplier;
   cardAmountTry: number;
   cardAmountUsd: number;

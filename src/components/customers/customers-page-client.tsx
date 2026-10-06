@@ -94,6 +94,8 @@ import {
   createCustomerOfferPdf,
 } from "@/lib/customer-offer-pdf";
 
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -376,6 +378,8 @@ export function CustomersPageClient() {
     paymentOffer,
     setPaymentOffer,
   ] = useState<CustomerSystemOffer | null>(null);
+
+  const [cancelInstallationOffer, setCancelInstallationOffer] = useState<CustomerSystemOffer | null>(null);
 
   /*
    * Base UI Accordion root değeri string[] olarak tutulur.
@@ -1326,6 +1330,7 @@ export function CustomersPageClient() {
 
             {status ===
               "installation_pending" && (
+              <>
               <Button
                 type="button"
                 size="sm"
@@ -1345,6 +1350,15 @@ export function CustomersPageClient() {
                 <Wrench className="size-4" />
                 Montaj Yapıldı
               </Button>
+              <Button
+                type="button" variant="outline" size="sm"
+                disabled={isProcessing || isDeleting}
+                onClick={() => { setCancelInstallationOffer(offer); setActionError(null); }}
+              >
+                <X className="size-4" />
+                Montajı İptal Et
+              </Button>
+              </>
             )}
 
             <Button
@@ -2051,6 +2065,31 @@ export function CustomersPageClient() {
           completeOrderFromDetail
         }
       />
+
+      <Dialog open={Boolean(cancelInstallationOffer)} onOpenChange={(open) => {
+        if (!open && !processingOfferId) setCancelInstallationOffer(null);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Montajı İptal Et</DialogTitle>
+            <DialogDescription>
+              Teklif, Teklif Verildi aşamasına dönecek. Malzemeler stokta kalacak ve bu montajın rezervasyonu kalkacak.
+              Tedarikçi ödemeleri ve önceden çekilmiş müşteri kartı kayıtları korunacak.
+            </DialogDescription>
+          </DialogHeader>
+          {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+          <DialogFooter>
+            <Button variant="outline" disabled={Boolean(processingOfferId)} onClick={() => setCancelInstallationOffer(null)}>Vazgeç</Button>
+            <Button disabled={Boolean(processingOfferId)} onClick={async () => {
+              if (!cancelInstallationOffer) return;
+              const cancelled = await runWorkflowAction(cancelInstallationOffer, "cancel-installation");
+              if (cancelled) { setCancelInstallationOffer(null); setWorkflowView("all"); }
+            }}>
+              {processingOfferId ? "İşleniyor..." : "Montajı İptal Et"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CustomerOfferPaymentDialog
         open={Boolean(

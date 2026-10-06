@@ -30,7 +30,8 @@ function isWorkflowAction(
     value ===
       "order-completed" ||
     value ===
-      "complete-sale"
+      "complete-sale" ||
+    value === "cancel-installation"
   );
 }
 
