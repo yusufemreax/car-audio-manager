@@ -18,6 +18,7 @@ import {
   Pencil,
   Search,
   TrendingUp,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -47,6 +48,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -193,6 +195,9 @@ export function ReadySystemsPageClient() {
     useState<string | null>(
       null
     );
+
+  const [deleteTarget, setDeleteTarget] = useState<SystemPreparation | null>(null);
+  const [deletingSystemId, setDeletingSystemId] = useState<string | null>(null);
 
   const [
     successMessage,
@@ -400,7 +405,7 @@ export function ReadySystemsPageClient() {
         SystemPreparation
     ) => {
       if (
-        copyingSystemId
+        copyingSystemId || deletingSystemId
       ) {
         return;
       }
@@ -471,6 +476,34 @@ export function ReadySystemsPageClient() {
         );
       }
     };
+
+  const deleteSystem = async () => {
+    if (!deleteTarget || deletingSystemId || copyingSystemId) return;
+    const system = deleteTarget;
+    setDeletingSystemId(system.id);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const response = await fetch(`/api/system-preparations/${encodeURIComponent(system.id)}`, {
+        method: "DELETE",
+      });
+      const result: ApiResponse<null> = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message ?? "Hazır sistem silinemedi.");
+      }
+      setSystems((previous) => previous.filter((item) => item.id !== system.id));
+      if (selectedSystem?.id === system.id) {
+        setSelectedSystem(null);
+        setDetailOpen(false);
+      }
+      setDeleteTarget(null);
+      setSuccessMessage(`${system.name} silindi.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Hazır sistem silinemedi.");
+    } finally {
+      setDeletingSystemId(null);
+    }
+  };
 
   /*
    * =======================================================
@@ -687,6 +720,7 @@ export function ReadySystemsPageClient() {
               <Table className="min-w-[1200px]">
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[180px]">İşlemler</TableHead>
                     <TableHead className="min-w-[220px]">
                       Sistem
                     </TableHead>
@@ -725,7 +759,6 @@ export function ReadySystemsPageClient() {
                       Tarih
                     </TableHead>
 
-                    <TableHead className="w-[156px]" />
                   </TableRow>
                 </TableHeader>
 
@@ -739,6 +772,85 @@ export function ReadySystemsPageClient() {
                           system.id
                         }
                       >
+                        {/* ACTIONS */}
+
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center justify-start gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={copyingSystemId !== null || deletingSystemId !== null}
+                              onClick={() =>
+                                editSystem(
+                                  system
+                                )
+                              }
+                            >
+                              <Pencil className="size-4" />
+
+                              <span className="sr-only">
+                                Düzenle
+                              </span>
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={copyingSystemId !== null || deletingSystemId !== null}
+                              onClick={() => {
+                                void copySystem(
+                                  system
+                                );
+                              }}
+                            >
+                              {copyingSystemId ===
+                              system.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Copy className="size-4" />
+                              )}
+
+                              <span className="sr-only">
+                                Kopyala
+                              </span>
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={copyingSystemId !== null || deletingSystemId !== null}
+                              onClick={() =>
+                                openDetail(
+                                  system
+                                )
+                              }
+                            >
+                              <Eye className="size-4" />
+
+                              <span className="sr-only">
+                                Detay
+                              </span>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Sil"
+                              disabled={copyingSystemId !== null || deletingSystemId !== null}
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => { setDeleteTarget(system); setError(null); }}
+                            >
+                              {deletingSystemId === system.id
+                                ? <Loader2 className="size-4 animate-spin" />
+                                : <Trash2 className="size-4" />}
+                              <span className="sr-only">Sil</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+
                         {/* SYSTEM */}
 
                         <TableCell>
@@ -872,71 +984,7 @@ export function ReadySystemsPageClient() {
                           </div>
                         </TableCell>
 
-                        {/* DETAIL */}
 
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                editSystem(
-                                  system
-                                )
-                              }
-                            >
-                              <Pencil className="size-4" />
-
-                              <span className="sr-only">
-                                Düzenle
-                              </span>
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              disabled={
-                                copyingSystemId !==
-                                  null
-                              }
-                              onClick={() => {
-                                void copySystem(
-                                  system
-                                );
-                              }}
-                            >
-                              {copyingSystemId ===
-                              system.id ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <Copy className="size-4" />
-                              )}
-
-                              <span className="sr-only">
-                                Kopyala
-                              </span>
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                openDetail(
-                                  system
-                                )
-                              }
-                            >
-                              <Eye className="size-4" />
-
-                              <span className="sr-only">
-                                Detay
-                              </span>
-                            </Button>
-                          </div>
-                        </TableCell>
                         
                         
                       </TableRow>
@@ -948,6 +996,26 @@ export function ReadySystemsPageClient() {
           </div>
         )}
       </div>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
+        if (!open && !deletingSystemId) setDeleteTarget(null);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Hazır Sistemi Sil</DialogTitle>
+            <DialogDescription>
+              “{deleteTarget?.name}” hazır sistem kaydı silinecek.
+            </DialogDescription>
+          </DialogHeader>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button variant="outline" disabled={Boolean(deletingSystemId)} onClick={() => setDeleteTarget(null)}>Vazgeç</Button>
+            <Button variant="destructive" disabled={Boolean(deletingSystemId || copyingSystemId)} onClick={() => { void deleteSystem(); }}>
+              {deletingSystemId ? "Siliniyor..." : "Sil"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ===================================================
           DETAIL DIALOG
