@@ -599,6 +599,7 @@ export function CustomerOfferPaymentDialog({
       }
 
       if (
+        paymentMethod === "prepaid_card" &&
         cardTryNumber >
         totalTry
       ) {
@@ -726,10 +727,6 @@ export function CustomerOfferPaymentDialog({
               onChange={(event) => {
                 const value = event.target.value;
                 setBargainingDiscountTry(value);
-                const nextTotal = roundMoney(Math.max(0, originalTotalTry - toNumber(value)));
-                if (paymentMethod === "card" && cardTryNumber > nextTotal) {
-                  handleCardTryChange(nextTotal.toFixed(2));
-                }
                 setError(null);
               }}
             />
@@ -905,9 +902,6 @@ export function CustomerOfferPaymentDialog({
                   <Input
                     type="number"
                     min="0"
-                    max={
-                      totalTry
-                    }
                     step="0.01"
                     value={
                       cardAmountTry

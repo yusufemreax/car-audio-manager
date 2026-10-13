@@ -2319,6 +2319,7 @@ function buildCustomerPayment(
   }
 
   if (
+    payment.method === "prepaid_card" &&
     cardAmountTry >
     totalTry
   ) {
