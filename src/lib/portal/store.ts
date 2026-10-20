@@ -1,6 +1,7 @@
 import type { ObjectId } from "mongodb";
 import { getDatabase } from "@/lib/mongodb";
 import type { CustomerVehicle } from "@/types/customer";
+import type { VehicleRequestDocument } from "./vehicle-requests";
 export interface AccountDocument {
   customerId?: ObjectId;
   vehicles?: CustomerVehicle[];
@@ -32,6 +33,9 @@ export async function portalStore() {
   const store = {
     db,
     accounts: db.collection<AccountDocument>("portalAccounts"),
+    vehicleRequests: db.collection<VehicleRequestDocument>(
+      "portalVehicleRequests",
+    ),
     sessions: db.collection<{
       _id: string;
       accountId: ObjectId;
@@ -48,6 +52,7 @@ export async function portalStore() {
   if (!indexes)
     indexes = Promise.all([
       store.accounts.createIndex({ phone: 1 }, { unique: true }),
+      store.vehicleRequests.createIndex({ requestId: 1 }, { unique: true }),
       store.sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       store.appointments.createIndex({ requestId: 1 }, { unique: true }),
       store.appointments.createIndex({ startsAt: 1, status: 1 }),

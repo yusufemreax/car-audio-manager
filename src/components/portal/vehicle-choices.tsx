@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { PortalVehicle } from "@/types/portal";
 import { fieldClass, portalFetch } from "./shared";
+import { VehicleRequestButton } from "./vehicle-request";
 export interface VehicleChoice {
   key?: string;
   generationId: string;
@@ -79,6 +80,9 @@ export function VehicleChoices({
       >
         + Başka araç ekle
       </button>
+      <div>
+        <VehicleRequestButton />
+      </div>
     </fieldset>
   );
 }

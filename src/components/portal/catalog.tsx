@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 import Link from "next/link";
+import { VehicleRequestButton } from "./vehicle-request";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
@@ -249,6 +250,9 @@ export function PortalCatalog() {
             <ArrowRight size={18} />
           </PortalButton>
         </form>
+        <div className="mt-4">
+          <VehicleRequestButton />
+        </div>
         {error && (
           <div className="mt-5">
             <PortalMessage error>{error}</PortalMessage>

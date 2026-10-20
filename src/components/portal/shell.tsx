@@ -65,6 +65,14 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           <p className="text-slate-500">
             Aracınıza uygun multimedya, size uygun montaj zamanı.
           </p>
+          <a
+            href="https://maps.app.goo.gl/rvxNvzj32AehTbXf8"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 font-semibold text-amber-700 hover:underline"
+          >
+            <span aria-hidden="true">📍</span> Dükkan konumu · Google Maps
+          </a>
           <Link href="/musteri/hesabim" className="font-semibold">
             Hesabım ve randevularım →
           </Link>

@@ -15,6 +15,7 @@ import {
   PackageCheck,
   Users,
   CalendarDays,
+  CarFront,
   Truck,
   ChartNoAxesCombined,
   ShoppingCart,
@@ -711,6 +712,10 @@ export function AppSidebar() {
             <Link href="/customer-appointments" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === "/customer-appointments" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
               <CalendarDays className="size-4" />
               Müşteri Randevuları
+            </Link>
+            <Link href="/vehicle-requests" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === "/vehicle-requests" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+              <CarFront className="size-4" />
+              Araç İstekleri
             </Link>
 
             <Link
