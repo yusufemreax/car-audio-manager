@@ -40,6 +40,11 @@ export async function proxy(
     search,
   } = request.nextUrl;
 
+  // Customer routes expose only the dedicated retail APIs. Admin routes keep their existing session check.
+  if (pathname === "/musteri" || pathname.startsWith("/musteri/") || pathname.startsWith("/api/portal/")) {
+    return NextResponse.next();
+  }
+
   const token = request.cookies.get(
     AUTH_COOKIE_NAME
   )?.value;

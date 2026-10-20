@@ -14,6 +14,7 @@ import {
   Settings2,
   PackageCheck,
   Users,
+  CalendarDays,
   Truck,
   ChartNoAxesCombined,
   ShoppingCart,
@@ -705,6 +706,11 @@ export function AppSidebar() {
               <span>
                 Toplam Ciro
               </span>
+            </Link>
+
+            <Link href="/customer-appointments" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === "/customer-appointments" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+              <CalendarDays className="size-4" />
+              Müşteri Randevuları
             </Link>
 
             <Link

@@ -1524,6 +1524,9 @@ async function completeOrderAndConsumeStock(
 
       const missingQuantity =
         Math.max(
+          // The stored order can include units already reserved for another
+          // installation. Physical stock alone must not erase that purchase.
+          requirement.missingQuantity,
           requirement.requiredQuantity -
             previousQuantity,
           0
@@ -3167,6 +3170,18 @@ async function deductInstallationStock(
 
     throw error;
   }
+}
+
+// Portal approval always enters the order queue. Use the same reservation-aware
+// requirements as start-sale; reserve conflicts default to ordering additional
+// units so an existing installation's stock is never silently taken.
+export async function getPortalOrderRequirements(id: string) {
+  const { offersCollection, inventoryCollection } = await getCollections();
+  const offer = await offersCollection.findOne({ _id: getOfferObjectId(id) });
+  if (!offer) throw new CustomerOfferWorkflowError("Teklif bulunamadı.", 404);
+  const resolution = await resolveStartSaleRequirements(inventoryCollection, offersCollection, offer);
+  return applyReservedStockDecisions(resolution.requirements,
+    getReservationConflicts(resolution.requirements).map((item) => ({ productId: item.productId, decision: "order" as const })));
 }
 
 export async function getCustomerOfferWorkflowDetail(
