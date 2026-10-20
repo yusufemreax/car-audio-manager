@@ -21,6 +21,8 @@ export type CustomerSystemOfferType =
 export type CustomerOfferSystemSnapshot =
   SystemPreparation & {
     additionalDescription?: string;
+    installationImageUrl?: string;
+    installationImagePublicId?: string;
   };
 
 export interface CustomerOfferOrderSupplierPaymentRecord {

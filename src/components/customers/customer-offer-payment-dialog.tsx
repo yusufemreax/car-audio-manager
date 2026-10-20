@@ -691,8 +691,8 @@ export function CustomerOfferPaymentDialog({
         );
       }}
     >
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-xl">
+        <DialogHeader className="shrink-0 pr-6">
           <DialogTitle className="flex items-center gap-2">
             <WalletCards className="size-5" />
             Montaj ve Ödeme Tamamlama
@@ -702,7 +702,7 @@ export function CustomerOfferPaymentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain pr-2">
           <div className="rounded-xl border bg-muted/20 p-4">
             <div className="text-xs text-muted-foreground">
               Toplam Alacak
@@ -1049,7 +1049,7 @@ export function CustomerOfferPaymentDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button
             type="button"
             variant="outline"

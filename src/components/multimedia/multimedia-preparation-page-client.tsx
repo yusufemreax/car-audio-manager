@@ -1,6 +1,8 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
+import { InstallationImageField, type InstallationImage } from "@/components/multimedia/installation-image-field";
+
 import {
   useEffect,
   useMemo,
@@ -306,6 +308,9 @@ export function MultimediaPreparationPageClient() {
   ] = useState<MultimediaPreparationMode>(
     "framed"
   );
+
+  const [installationImage, setInstallationImage] = useState<InstallationImage | null>(null);
+  const [uploadingInstallationImage, setUploadingInstallationImage] = useState(false);
 
   const [, setSystemName] = useState("");
 
@@ -1062,6 +1067,9 @@ export function MultimediaPreparationPageClient() {
             preparation.name
           );
 
+          setInstallationImage(preparation.installationImageUrl && preparation.installationImagePublicId ? {
+            imageUrl: preparation.installationImageUrl, imagePublicId: preparation.installationImagePublicId,
+          } : null);
           setAdditionalDescription(
             preparation.additionalDescription ??
               ""
@@ -1751,6 +1759,7 @@ export function MultimediaPreparationPageClient() {
 
   const buildPayload =
     (): MultimediaPreparationPayload | null => {
+      if (uploadingInstallationImage) { setError("Fotoğrafın yüklenmesini bekleyin."); return null; }
       if (
         !selectedVehicleBrandId ||
         !selectedVehicleModelId ||
@@ -1821,6 +1830,8 @@ export function MultimediaPreparationPageClient() {
 
       return {
         multimediaMode,
+        installationImageUrl: installationImage?.imageUrl ?? "",
+        installationImagePublicId: installationImage?.imagePublicId ?? "",
         vehicleBrandId:
           selectedVehicleBrandId,
         vehicleModelId:
@@ -2172,6 +2183,7 @@ export function MultimediaPreparationPageClient() {
          */
         setSystemName("");
         setAdditionalDescription("");
+        setInstallationImage(null);
         setSelectedVehicleBrandId("");
         setSelectedVehicleModelId("");
         setSelectedVehicleGenerationId("");
@@ -2294,6 +2306,14 @@ export function MultimediaPreparationPageClient() {
           placeholder="Örn: Piano black çerçeve, kablosuz CarPlay"
         />
       </div>
+
+      <InstallationImageField
+        value={installationImage}
+        onChange={(image) => { setInstallationImage(image); setSuccessMessage(null); }}
+        busy={uploadingInstallationImage}
+        onBusyChange={setUploadingInstallationImage}
+        disabled={saving || readySaving || loadingEditingPreparation}
+      />
 
       <Card>
         <CardHeader>
@@ -3485,6 +3505,7 @@ export function MultimediaPreparationPageClient() {
                       className="w-full"
                       disabled={
                         saving ||
+                        uploadingInstallationImage ||
                         readySaving ||
                         !selectedVehicleGenerationId ||
                         !usdTryRate
@@ -3508,6 +3529,7 @@ export function MultimediaPreparationPageClient() {
                     className="w-full"
                     disabled={
                       saving ||
+                      uploadingInstallationImage ||
                       readySaving ||
                       !selectedVehicleGenerationId ||
                       !usdTryRate ||

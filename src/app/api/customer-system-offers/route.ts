@@ -1,3 +1,4 @@
+import { attachOfferInstallationImages } from "@/lib/offer-installation-images";
 import { refreshMultimediaForOffers } from "@/lib/multimedia-offer-refresh";
 import {
   ObjectId,
@@ -133,9 +134,9 @@ export async function GET(
       success: true,
 
       data:
-        records.map(
+        await attachOfferInstallationImages(records.map(
           serializeCustomerSystemOffer
-        ),
+        )),
     });
   } catch (error) {
     console.error(

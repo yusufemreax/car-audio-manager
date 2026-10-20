@@ -21,6 +21,8 @@ import type {
 
 import { calculateMultimediaAutoDiscount } from "@/lib/multimedia-auto-discount";
 
+import { validateInstallationImage } from "@/lib/installation-image";
+
 export {
   SystemPreparationBuildError,
 };
@@ -76,6 +78,11 @@ export async function buildMultimediaPreparationData(
     throw new SystemPreparationBuildError("Otomatik indirim seçimi geçersiz.");
   }
   const automaticDiscount = body.automaticDiscount !== false;
+
+  const installationImageUrl = cleanString(body.installationImageUrl);
+  const installationImagePublicId = cleanString(body.installationImagePublicId);
+  try { validateInstallationImage(installationImageUrl, installationImagePublicId); }
+  catch (error) { throw new SystemPreparationBuildError(error instanceof Error ? error.message : "Montaj görüntüsü geçersiz."); }
 
   const brandId = toObjectId(
     cleanString(body.vehicleBrandId),
@@ -391,6 +398,7 @@ export async function buildMultimediaPreparationData(
 
   return {
     ...base,
+    ...(installationImageUrl ? { installationImageUrl, installationImagePublicId } : {}),
     automaticDiscount,
     name: autoName,
     multimediaMode:

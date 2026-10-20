@@ -1,3 +1,4 @@
+import { attachOfferInstallationImages } from "@/lib/offer-installation-images";
 import {
   NextResponse,
 } from "next/server";
@@ -24,7 +25,7 @@ export async function GET() {
       success:
         true,
       data:
-        offers,
+        await attachOfferInstallationImages(offers),
     });
   } catch (error) {
     console.error(

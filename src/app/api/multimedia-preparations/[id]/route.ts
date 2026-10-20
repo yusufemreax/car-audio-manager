@@ -254,6 +254,11 @@ export async function PUT(
       unset.multimediaStorage = "";
     }
 
+    if (!preparationData.installationImageUrl) {
+      unset.installationImageUrl = "";
+      unset.installationImagePublicId = "";
+    }
+
     if (!preparationData.additionalDescription) {
       unset.additionalDescription = "";
     }

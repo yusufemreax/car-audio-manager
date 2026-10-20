@@ -16,6 +16,7 @@ import {
   Eye,
   FileDown,
   FileImage,
+  Download,
   Loader2,
   MonitorSmartphone,
   PackageCheck,
@@ -379,6 +380,8 @@ export function CustomersPageClient() {
     setPaymentOffer,
   ] = useState<CustomerSystemOffer | null>(null);
 
+  const [downloadingInstallationImageId, setDownloadingInstallationImageId] = useState<string | null>(null);
+
   const [cancelInstallationOffer, setCancelInstallationOffer] = useState<CustomerSystemOffer | null>(null);
 
   /*
@@ -490,13 +493,37 @@ export function CustomersPageClient() {
               (offer) =>
                 offer.id ===
                 updatedOffer.id
-                  ? updatedOffer
+                  ? { ...updatedOffer, systemSnapshot: { ...offer.systemSnapshot, ...updatedOffer.systemSnapshot } }
                   : offer
             )
         );
       },
       []
     );
+
+  const downloadInstallationImage = async (offer: CustomerSystemOffer) => {
+    if (downloadingInstallationImageId) return;
+    setDownloadingInstallationImageId(offer.id);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/customer-system-offers/${encodeURIComponent(offer.id)}/installation-image`, { cache: "no-store" });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.message ?? "Örnek montaj görüntüsü indirilemedi.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `ornek-montaj-${offer.id}.jpg`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (downloadError) {
+      setActionError(downloadError instanceof Error ? downloadError.message : "Örnek montaj görüntüsü indirilemedi.");
+    } finally { setDownloadingInstallationImageId(null); }
+  };
 
   const addCompatibleMultimediaOffers =
     async (
@@ -1413,6 +1440,17 @@ export function CustomersPageClient() {
               {isCreatingJpg
                 ? "JPG Oluşturuluyor..."
                 : "JPG Oluştur"}
+            </Button>
+
+            <Button
+              type="button" variant="outline" size="sm"
+              disabled={!offer.systemSnapshot.installationImageUrl || Boolean(downloadingInstallationImageId) || isDeleting || isProcessing}
+              onClick={() => { void downloadInstallationImage(offer); }}
+            >
+              {downloadingInstallationImageId === offer.id
+                ? <Loader2 className="size-4 animate-spin" />
+                : <Download className="size-4" />}
+              Örnek Montaj
             </Button>
 
             {canDelete && (

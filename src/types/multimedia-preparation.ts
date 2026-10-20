@@ -25,6 +25,8 @@ export interface MultimediaPreparation
   multimediaRam?: string;
   multimediaStorage?: string;
   additionalDescription?: string;
+  installationImageUrl?: string;
+  installationImagePublicId?: string;
 }
 
 export interface MultimediaPreparationPayload
@@ -35,4 +37,6 @@ export interface MultimediaPreparationPayload
   vehicleModelId: string;
   vehicleGenerationId: string;
   additionalDescription?: string;
+  installationImageUrl?: string;
+  installationImagePublicId?: string;
 }

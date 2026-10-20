@@ -36,6 +36,8 @@ export interface MultimediaPreparationDocument
   multimediaRam?: string;
   multimediaStorage?: string;
   additionalDescription?: string;
+  installationImageUrl?: string;
+  installationImagePublicId?: string;
 }
 
 let indexPromise: Promise<void> | null = null;
@@ -88,6 +90,10 @@ export function serializeMultimediaPreparation(
 
   return {
     ...base,
+    ...(preparation.installationImageUrl ? {
+      installationImageUrl: preparation.installationImageUrl,
+      installationImagePublicId: preparation.installationImagePublicId,
+    } : {}),
     automaticDiscount: preparation.automaticDiscount !== false,
     multimediaMode:
       preparation.multimediaMode ??
