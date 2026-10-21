@@ -10,6 +10,7 @@ import {
 
 import type {
   Product,
+  MultimediaAlternatives,
   ProductCategory,
   ProductSpecificationValue,
 } from "@/types/product";
@@ -24,6 +25,7 @@ import {
 } from "@/types/supplier";
 
 export interface ProductDocument {
+  multimediaAlternatives?: MultimediaAlternatives;
   productCode: string;
   brand: string;
   model: string;
@@ -42,6 +44,9 @@ export interface ProductDocument {
   subCategory?: string;
   suppliers?: ProductSupplier[];
   supplierPrices?: Array<{
+    productCode?: string;
+    priceRefreshAttemptedAt?: Date;
+    sourceAvailabilityCheckedAt?: Date;
     supplier: ProductSupplier;
     priceUsd: number;
     sourceUrl?: string;
@@ -94,6 +99,9 @@ export function serializeProduct(
 
       return {
         supplier,
+        ...(stored?.productCode ? { productCode: stored.productCode } : {}),
+        ...(stored?.priceRefreshAttemptedAt instanceof Date ? { priceRefreshAttemptedAt: stored.priceRefreshAttemptedAt.toISOString() } : {}),
+        ...(stored?.sourceAvailabilityCheckedAt instanceof Date ? { sourceAvailabilityCheckedAt: stored.sourceAvailabilityCheckedAt.toISOString() } : {}),
         priceUsd:
           Number(
             stored?.priceUsd ??
@@ -133,6 +141,7 @@ export function serializeProduct(
   return {
     id:
       product._id.toString(),
+    ...(product.multimediaAlternatives ? { multimediaAlternatives: product.multimediaAlternatives } : {}),
     productCode:
       product.productCode,
     brand:

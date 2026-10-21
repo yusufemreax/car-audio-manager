@@ -1,4 +1,5 @@
 "use client";
+import { getSupplierProductCode } from "@/lib/product-supplier-code";
 
 import {
   useMemo,
@@ -92,6 +93,7 @@ interface ProductSelectionDialogProps {
   selectedProductId?: string;
 
   selectedSupplier?: ProductSupplier;
+  preferredSupplier?: ProductSupplier;
 
   onSelect:
     (
@@ -678,6 +680,7 @@ export function ProductSelectionDialog({
   exchangeRate,
   selectedProductId,
   selectedSupplier,
+  preferredSupplier,
   onSelect,
   onClear,
 }: ProductSelectionDialogProps) {
@@ -792,12 +795,7 @@ export function ProductSelectionDialog({
        */
       result.productCode =
         getUniqueOptions(
-          categoryProducts.map(
-            (
-              product
-            ) =>
-              product.productCode
-          )
+          categoryProducts.flatMap((product) => [product.productCode, ...(product.supplierPrices ?? []).flatMap((row) => row.productCode ? [row.productCode] : [])])
         );
 
       /*
@@ -992,6 +990,7 @@ export function ProductSelectionDialog({
                 normalize(
                   [
                     product.productCode,
+                    ...(product.supplierPrices ?? []).map((row) => row.productCode ?? ""),
                     product.brand,
                     product.model,
                     ...dynamicValues,
@@ -1026,9 +1025,7 @@ export function ProductSelectionDialog({
             if (
               codeFilters.length >
                 0 &&
-              !codeFilters.includes(
-                product.productCode
-              )
+              ![product.productCode, ...(product.supplierPrices ?? []).flatMap((row) => row.productCode ? [row.productCode] : [])].some((code) => codeFilters.includes(code))
             ) {
               return false;
             }
@@ -1234,8 +1231,11 @@ export function ProductSelectionDialog({
                 item.sourceUnavailable === true,
             }));
           }
-        ),
-      [filteredProducts]
+        ).sort((a,b) => {
+          const rank = (row: { supplier: ProductSupplier; sourceUnavailable: boolean }) => row.sourceUnavailable ? 2 : row.supplier === preferredSupplier ? 0 : 1;
+          return rank(a) - rank(b);
+        }),
+      [filteredProducts, preferredSupplier]
     );
 
   /*
@@ -1783,7 +1783,7 @@ export function ProductSelectionDialog({
                             `}
                           >
                             {
-                              product.productCode
+                              getSupplierProductCode(product, supplier)
                             }
                           </TableCell>
 
@@ -1803,13 +1803,14 @@ export function ProductSelectionDialog({
                             </div>
                             {unavailable ? (
                               <div className="mt-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                                Satışta değil · EGB sayfası bulunamadı (404)
+                                Satışta değil · {supplier} bağlantısı kullanılamıyor
                               </div>
                             ) : null}
                           </TableCell>
 
                           <TableCell className="h-13 whitespace-nowrap font-medium">
                             {supplier}
+                            {preferredSupplier === supplier && !unavailable && <div className="text-[10px] text-emerald-600">Çerçeveyle aynı tedarikçi</div>}
                           </TableCell>
 
                           {/* DYNAMIC */}

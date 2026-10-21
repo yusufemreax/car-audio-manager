@@ -1,3 +1,4 @@
+import { refreshMultimediaForOffers } from "@/lib/multimedia-offer-refresh";
 import {
   NextRequest,
   NextResponse,
@@ -102,14 +103,13 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({
-      success:
-        true,
-      data:
-        serializeMultimediaPreparation(
-          preparation
-        ),
-    });
+    let current = preparation;
+    let refreshWarning: string | undefined;
+    if (preparation.status === "ready") {
+      try { [current] = await refreshMultimediaForOffers([preparation]); }
+      catch (error) { refreshWarning = error instanceof Error ? error.message : "Ürünler yenilenemedi; son kayıt gösteriliyor."; }
+    }
+    return NextResponse.json({ success: true, data: { ...serializeMultimediaPreparation(current), ...(refreshWarning ? { refreshWarning } : {}) } });
   } catch (
     error
   ) {
@@ -197,7 +197,7 @@ export async function PUT(
 
     const preparationData =
       await buildMultimediaPreparationData(
-        body
+        body, existing
       );
 
     /*
@@ -237,6 +237,8 @@ export async function PUT(
       unset.exchangeRateDate =
         "";
     }
+
+    if (!("supplierPreference" in preparationData) || !preparationData.supplierPreference) unset.supplierPreference = "";
 
     if (!preparationData.multimediaProductId) {
       unset.multimediaProductId = "";

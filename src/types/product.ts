@@ -37,7 +37,10 @@ export interface ProductVehicleCompatibility {
   vehicleGenerationId: string;
 }
 
+export type MultimediaAlternatives = Partial<Record<"EGB" | "OZDEMIR", string>>;
+
 export interface Product {
+  multimediaAlternatives?: MultimediaAlternatives;
   id: string;
   productCode: string;
   brand: string;
@@ -73,6 +76,7 @@ export interface Product {
 }
 
 export type ProductPayload = {
+  multimediaAlternatives?: MultimediaAlternatives;
   productCode: string;
   brand: string;
   model: string;

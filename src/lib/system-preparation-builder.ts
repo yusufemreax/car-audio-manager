@@ -640,7 +640,7 @@ export async function buildSystemPreparationData(
           productId:
             product._id,
           productCode:
-            product.productCode,
+            product.supplierPrices?.find((row) => row.supplier === selectedSupplierPrice.supplier)?.productCode || product.productCode,
           brand:
             product.brand,
           model:
@@ -793,7 +793,7 @@ export async function buildSystemPreparationData(
         productId:
           product._id,
         productCode:
-          product.productCode,
+          product.supplierPrices?.find((row) => row.supplier === selectedSupplierPrice.supplier)?.productCode || product.productCode,
         brand:
           product.brand,
         model:

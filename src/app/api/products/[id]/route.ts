@@ -1,3 +1,4 @@
+import { validateMultimediaAlternatives } from "@/lib/multimedia-product-alternatives";
 import {
   NextRequest,
   NextResponse,
@@ -326,6 +327,12 @@ export async function PUT(
       );
     }
 
+    const multimediaAlternatives = await validateMultimediaAlternatives(
+      body.multimediaAlternatives ?? (category === "multimedia" ? existing.multimediaAlternatives : {}), category,
+      { specifications: vehicleCompatibility.specifications, isVehicleSpecific: vehicleCompatibility.isVehicleSpecific, suppliers },
+      objectId.toHexString()
+    );
+
     const now =
       new Date();
     const supplierPrices =
@@ -333,12 +340,12 @@ export async function PUT(
         body.supplierPrices,
         suppliers,
         body.priceUsd,
-        sourceUrl
+        sourceUrl, existing
       );
     const primarySupplierPrice =
       supplierPrices[0];
     const priceUsd =
-      primarySupplierPrice.priceUsd;
+      supplierPrices.find((row) => row.sourceUnavailable !== true)?.priceUsd ?? primarySupplierPrice.priceUsd;
     const primarySourceUrl =
       primarySupplierPrice.sourceUrl ?? "";
 
@@ -387,6 +394,7 @@ export async function PUT(
             : {}),
           suppliers,
           supplierPrices,
+          multimediaAlternatives,
           specifications:
             vehicleCompatibility.specifications,
           updatedAt:
@@ -400,7 +408,7 @@ export async function PUT(
                 priceRefreshAttemptedAt:
                   primarySupplierPrice.priceCheckedAt ?? now,
                 sourceUnavailable:
-                  false,
+                  supplierPrices.every((row) => row.sourceUnavailable === true),
                 sourceAvailabilityCheckedAt:
                   primarySupplierPrice.priceCheckedAt ?? now,
               }

@@ -1,3 +1,4 @@
+import { validateMultimediaAlternatives } from "@/lib/multimedia-product-alternatives";
 import {
   NextRequest,
   NextResponse,
@@ -352,7 +353,7 @@ export async function POST(
     const primarySupplierPrice =
       supplierPrices[0];
     const priceUsd =
-      primarySupplierPrice.priceUsd;
+      supplierPrices.find((row) => row.sourceUnavailable !== true)?.priceUsd ?? primarySupplierPrice.priceUsd;
     const primarySourceUrl =
       primarySupplierPrice.sourceUrl ?? "";
 
@@ -412,6 +413,12 @@ export async function POST(
         body
       );
 
+    const multimediaAlternatives = await validateMultimediaAlternatives(
+      body.multimediaAlternatives, category,
+      { specifications: vehicleCompatibility.specifications, isVehicleSpecific: vehicleCompatibility.isVehicleSpecific, suppliers },
+      undefined
+    );
+
     const MAX_CODE_RETRY =
       5;
 
@@ -462,6 +469,7 @@ export async function POST(
             : {}),
           suppliers,
           supplierPrices,
+          multimediaAlternatives,
           ...(primarySourceUrl
             ? {
                 sourceUrl:
@@ -471,7 +479,7 @@ export async function POST(
                 priceRefreshAttemptedAt:
                   primarySupplierPrice.priceCheckedAt ?? now,
                 sourceUnavailable:
-                  false,
+                  supplierPrices.every((row) => row.sourceUnavailable === true),
                 sourceAvailabilityCheckedAt:
                   primarySupplierPrice.priceCheckedAt ?? now,
               }

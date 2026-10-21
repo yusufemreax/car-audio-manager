@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
+import { MultimediaAlternativesField } from "./multimedia-alternatives-field";
 
 import {
   FormEvent,
@@ -166,6 +167,7 @@ interface ProductFormDialogProps {
 }
 
 interface ProductFormState {
+  multimediaAlternatives: import("@/types/product").MultimediaAlternatives;
   productCode: string;
 
   brand: string;
@@ -179,6 +181,7 @@ interface ProductFormState {
   suppliers: ProductSupplier[];
 
   supplierPrices: Array<{
+    productCode?: string;
     supplier: ProductSupplier;
     priceUsd: string;
     sourceUrl?: string;
@@ -212,6 +215,7 @@ interface ProductFormState {
 
 function createEmptyForm(): ProductFormState {
   return {
+    multimediaAlternatives: {},
     productCode: "",
     brand: "",
     model: "",
@@ -885,6 +889,7 @@ export function ProductFormDialog({
       );
 
       setForm({
+        multimediaAlternatives: product.multimediaAlternatives ?? {},
         productCode:
           product.productCode,
 
@@ -895,9 +900,7 @@ export function ProductFormDialog({
           product.model,
 
         priceUsd:
-          String(
-            product.priceUsd
-          ),
+          String(product.supplierPrices?.find((row) => row.supplier === (product.suppliers?.[0] ?? "EGB"))?.priceUsd ?? product.priceUsd),
 
         subCategory:
           product.subCategory ??
@@ -912,6 +915,7 @@ export function ProductFormDialog({
           product.supplierPrices?.length
             ? product.supplierPrices.map(
                 (item) => ({
+                  productCode: item.productCode,
                   supplier:
                     item.supplier,
                   priceUsd:
@@ -2516,6 +2520,7 @@ export function ProductFormDialog({
             }
           : {}),
 
+        multimediaAlternatives: resolvedCategory === "multimedia" ? form.multimediaAlternatives : {},
         suppliers:
           form.suppliers,
 
@@ -2530,6 +2535,7 @@ export function ProductFormDialog({
 
               return {
                 supplier,
+                ...(row?.productCode?.trim() ? { productCode: row.productCode.trim() } : {}),
                 priceUsd:
                   Number(
                     index === 0
@@ -4083,6 +4089,18 @@ export function ProductFormDialog({
               </p>
             </div>
 
+            {resolvedCategory === "multimedia-frame" && form.suppliers.map((supplier) => (
+              <div key={`supplier-code-${supplier}`} className="space-y-2">
+                <Label htmlFor={`supplier-code-${supplier}`}>{supplier} ürün kodu (isteğe bağlı)</Label>
+                <Input id={`supplier-code-${supplier}`} maxLength={100} disabled={submitting}
+                  value={form.supplierPrices.find((row) => row.supplier === supplier)?.productCode ?? ""}
+                  placeholder={`${supplier} tarafındaki çerçeve kodu`}
+                  onChange={(event) => { const value = event.target.value; setForm((previous) => ({ ...previous, supplierPrices: previous.supplierPrices.some((row) => row.supplier === supplier)
+                    ? previous.supplierPrices.map((row) => row.supplier === supplier ? { ...row, productCode: value } : row)
+                    : [...previous.supplierPrices, { supplier, priceUsd: supplier === previous.suppliers[0] ? previous.priceUsd : "", productCode: value }] })); }} />
+              </div>
+            ))}
+
             {form.suppliers.slice(1).map((supplier) => {
               const row =
                 form.supplierPrices.find(
@@ -4204,6 +4222,11 @@ export function ProductFormDialog({
               );
             })}
           </div>
+
+          {resolvedCategory === "multimedia" && <MultimediaAlternativesField
+            productId={product?.id} specifications={form.specifications} isVehicleSpecific={form.isVehicleSpecific}
+            value={form.multimediaAlternatives} disabled={submitting}
+            onChange={(value) => setForm((previous) => ({ ...previous, multimediaAlternatives: value }))} />}
 
           {(
             resolvedCategory ===

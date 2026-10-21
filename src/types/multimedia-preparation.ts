@@ -9,6 +9,7 @@ export type MultimediaPreparationMode =
 
 export interface MultimediaPreparation
   extends SystemPreparation {
+  refreshWarning?: string;
   automaticDiscount?: boolean;
   multimediaMode: MultimediaPreparationMode;
   vehicleBrandId: string;

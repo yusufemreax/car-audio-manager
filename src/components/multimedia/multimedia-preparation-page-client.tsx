@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
+import { getSupplierProductCode } from "@/lib/product-supplier-code";
 
 import { InstallationImageField, type InstallationImage } from "@/components/multimedia/installation-image-field";
 
@@ -2893,7 +2894,7 @@ export function MultimediaPreparationPageClient() {
                                       <span>
                                         Kod:{" "}
                                         <span className="font-medium text-foreground">
-                                          {slot.product.productCode}
+                                          {getSupplierProductCode(slot.product, slot.selectedSupplier)}
                                         </span>
                                       </span>
 
@@ -3578,6 +3579,7 @@ export function MultimediaPreparationPageClient() {
           exchangeRate={usdTryRate ?? 0}
           selectedProductId={productSelectionSlot.product?.id}
           selectedSupplier={productSelectionSlot.selectedSupplier}
+          preferredSupplier={multimediaMode === "framed" && productSelectionSlot.category === "multimedia" ? slots.find((slot) => slot.category === "multimedia-frame")?.selectedSupplier : undefined}
           onSelect={(product, supplier, priceUsd) => {
             if (
               productSelectionSlot.category ===

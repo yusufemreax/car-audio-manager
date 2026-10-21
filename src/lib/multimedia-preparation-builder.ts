@@ -1,3 +1,5 @@
+import { chooseSupplierPreference, sameSupplierSelection, resolveMultimediaSuppliers } from "./multimedia-supplier-resolution";
+import type { MultimediaPreparationDocument } from "./multimedia-preparations-collection";
 import {
   ObjectId,
 } from "mongodb";
@@ -63,7 +65,8 @@ function specificationText(
 }
 
 export async function buildMultimediaPreparationData(
-  body: MultimediaPreparationPayload
+  body: MultimediaPreparationPayload,
+  existing?: MultimediaPreparationDocument
 ) {
   if (
     body.multimediaMode !== "framed" &&
@@ -155,11 +158,23 @@ export async function buildMultimediaPreparationData(
    * mantığının tamamı mevcut Sistem Hazırlama builder'ından gelir.
    * Böylece iki ekranın hesaplama davranışı birbirinden kopmaz.
    */
-  const base =
+  let base =
     await buildSystemPreparationData({
       ...body,
       name: autoName,
     });
+
+  let supplierPreference = body.multimediaMode === "framed" ? chooseSupplierPreference(base.items, existing) : undefined;
+  if (supplierPreference) {
+    let resolved;
+    try { resolved = await resolveMultimediaSuppliers(base.items, supplierPreference); }
+    catch (error) { throw new SystemPreparationBuildError(error instanceof Error ? error.message : "Tedarikçi seçimi güncellenemedi.", 409); }
+    supplierPreference = resolved.preference;
+    if (!sameSupplierSelection(base.items, resolved.items)) {
+      base = await buildSystemPreparationData({ ...body, name: autoName, templateId: undefined, selections: [],
+        customItems: resolved.items.map((item) => ({ ...item, productId: item.productId?.toHexString() })) });
+    }
+  }
 
   if (automaticDiscount) {
     base.discountTry = calculateMultimediaAutoDiscount(
@@ -398,6 +413,7 @@ export async function buildMultimediaPreparationData(
 
   return {
     ...base,
+    ...(supplierPreference ? { supplierPreference } : {}),
     ...(installationImageUrl ? { installationImageUrl, installationImagePublicId } : {}),
     automaticDiscount,
     name: autoName,

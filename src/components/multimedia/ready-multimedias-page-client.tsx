@@ -546,6 +546,7 @@ export function ReadyMultimediasPageClient() {
                         <div className="font-semibold">
                           {vehicleTitle(system)}
                         </div>
+                        {system.refreshWarning && <p className="mt-1 max-w-xs text-xs text-destructive">{system.refreshWarning}</p>}
                         <div className="mt-1 text-xs text-muted-foreground">
                           {vehicleGeneration(system)}
                         </div>

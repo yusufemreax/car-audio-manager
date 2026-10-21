@@ -18,8 +18,14 @@ import type {
   MultimediaPreparationMode,
 } from "@/types/multimedia-preparation";
 
+export interface MultimediaSupplierPreference {
+  frameProductId: string; frameSupplier: import("@/types/supplier").ProductSupplier;
+  multimediaProductId: string; multimediaSupplier: import("@/types/supplier").ProductSupplier;
+}
+
 export interface MultimediaPreparationDocument
   extends SystemPreparationDocument {
+  supplierPreference?: MultimediaSupplierPreference;
   automaticDiscount?: boolean;
   multimediaMode?: MultimediaPreparationMode;
   vehicleBrandId: ObjectId;

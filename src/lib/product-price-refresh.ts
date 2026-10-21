@@ -1,629 +1,163 @@
-import type {
-  WithId,
-} from "mongodb";
-
+import type { WithId } from "mongodb";
 import {
   getProductsCollection,
   type ProductDocument,
 } from "@/lib/products-collection";
-
+import { normalizeProductSuppliers } from "@/types/supplier";
 import {
   fetchProductSourcePrice,
   getProductPriceSource,
-  getProductPriceSourceLabel,
   isProductSourceNotFoundError,
   roundCurrency,
 } from "@/lib/scraping/product-source-price";
 
-const PRODUCT_PRICE_REFRESH_CONCURRENCY =
-  3;
-
-const PRICE_REFRESH_TIME_ZONE =
-  "Europe/Istanbul";
-
-const refreshInFlight =
-  new Map<
-    string,
-    Promise<WithId<ProductDocument>>
-  >();
-
-function cleanString(
-  value: unknown
-) {
-  return typeof value === "string"
-    ? value.trim()
-    : "";
+type SupplierRow = NonNullable<ProductDocument["supplierPrices"]>[number];
+const inFlight = new Map<string, Promise<WithId<ProductDocument>>>();
+export function getIstanbulDayKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Istanbul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
-
-function isUsableDate(
-  value: unknown
-): value is Date {
-  return (
-    value instanceof Date &&
-    Number.isFinite(
-      value.getTime()
-    )
-  );
-}
-
-export function getIstanbulDayKey(
-  date: Date
-) {
-  const parts =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone:
-          PRICE_REFRESH_TIME_ZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }
-    ).formatToParts(date);
-
-  const values =
-    new Map(
-      parts.map((part) => [
-        part.type,
-        part.value,
-      ])
+function rowsFor(product: WithId<ProductDocument>): SupplierRow[] {
+  return normalizeProductSuppliers(product.suppliers).map((supplier, index) => {
+    const row = product.supplierPrices?.find(
+      (entry) => entry.supplier === supplier,
     );
-
-  return `${values.get("year")}-${values.get("month")}-${values.get("day")}`;
-}
-
-function getLastRefreshAttemptAt(
-  product: WithId<ProductDocument>
-) {
-  if (
-    isUsableDate(
-      product.priceRefreshAttemptedAt
-    )
-  ) {
-    return product.priceRefreshAttemptedAt;
-  }
-
-  if (
-    isUsableDate(
-      product.sourceAvailabilityCheckedAt
-    )
-  ) {
-    return product.sourceAvailabilityCheckedAt;
-  }
-
-  if (
-    isUsableDate(
-      product.priceCheckedAt
-    )
-  ) {
-    return product.priceCheckedAt;
-  }
-
-  return null;
-}
-
-/**
- * Bir ürün kaynak linkine sahipse Istanbul takvim gününde en fazla bir kez
- * dış kaynağa gidilir. Başarılı, 404 veya geçici hata fark etmeksizin o gün
- * yeniden istek yapılmaz.
- */
-export function isProductPriceFresh(
-  product: WithId<ProductDocument>,
-  now = new Date()
-) {
-  const sourceUrl =
-    cleanString(
-      product.sourceUrl
-    );
-
-  if (!sourceUrl) {
-    return true;
-  }
-
-  const lastAttemptAt =
-    getLastRefreshAttemptAt(
-      product
-    );
-
-  if (!lastAttemptAt) {
-    return false;
-  }
-
-  return (
-    getIstanbulDayKey(
-      lastAttemptAt
-    ) ===
-    getIstanbulDayKey(
-      now
-    )
-  );
-}
-
-export const isProductPriceRefreshAttemptedToday =
-  isProductPriceFresh;
-
-function withAttemptDate(
-  product: WithId<ProductDocument>,
-  attemptedAt: Date
-): WithId<ProductDocument> {
-  return {
-    ...product,
-    priceRefreshAttemptedAt:
-      attemptedAt,
-  };
-}
-
-function withSuccessfulCheck(
-  product: WithId<ProductDocument>,
-  checkedAt: Date,
-  priceUsd: number,
-  priceChanged: boolean
-): WithId<ProductDocument> {
-  return {
-    ...product,
-    priceUsd,
-    supplierPrices:
-      (product.supplierPrices?.length
-        ? product.supplierPrices
-        : [{
-            supplier:
-              product.suppliers?.[0] ?? "EGB",
-            priceUsd:
-              product.priceUsd,
-            ...(product.sourceUrl
-              ? {
-                  sourceUrl:
-                    product.sourceUrl,
-                }
-              : {}),
-          }]
-      ).map((item, index) =>
-        index === 0
-          ? {
-              ...item,
-              priceUsd,
-              priceCheckedAt:
-                checkedAt,
-              sourceUnavailable:
-                false,
-            }
-          : item
-      ),
-    priceCheckedAt:
-      checkedAt,
-    priceRefreshAttemptedAt:
-      checkedAt,
-    sourceUnavailable:
-      false,
-    sourceAvailabilityCheckedAt:
-      checkedAt,
-    ...(priceChanged
-      ? {
-          updatedAt:
-            checkedAt,
-        }
-      : {}),
-  };
-}
-
-function withUnavailableState(
-  product: WithId<ProductDocument>,
-  attemptedAt: Date
-): WithId<ProductDocument> {
-  return {
-    ...product,
-    sourceUnavailable:
-      true,
-    supplierPrices:
-      product.supplierPrices?.map(
-        (item, index) =>
-          index === 0
-            ? {
-                ...item,
-                sourceUnavailable:
-                  true,
-              }
-            : item
-      ),
-    sourceAvailabilityCheckedAt:
-      attemptedAt,
-    priceRefreshAttemptedAt:
-      attemptedAt,
-  };
-}
-
-async function readLatestProduct(
-  product: WithId<ProductDocument>,
-  fallback:
-    WithId<ProductDocument>
-) {
-  const products =
-    await getProductsCollection();
-
-  return (
-    (await products.findOne({
-      _id: product._id,
-    })) ?? fallback
-  );
-}
-
-async function markRefreshAttempt(
-  product: WithId<ProductDocument>,
-  attemptedAt: Date
-) {
-  const products =
-    await getProductsCollection();
-
-  await products.updateOne(
-    {
-      _id: product._id,
-      ...(product.sourceUrl
+    return {
+      ...row,
+      supplier,
+      priceUsd: Number(row?.priceUsd ?? product.priceUsd) || 0,
+      ...(index === 0
         ? {
-            sourceUrl:
-              product.sourceUrl,
+            sourceUrl: row?.sourceUrl || product.sourceUrl,
+            priceCheckedAt: row?.priceCheckedAt ?? product.priceCheckedAt,
+            priceRefreshAttemptedAt:
+              row?.priceRefreshAttemptedAt ?? product.priceRefreshAttemptedAt,
+            sourceAvailabilityCheckedAt:
+              row?.sourceAvailabilityCheckedAt ??
+              product.sourceAvailabilityCheckedAt,
+            sourceUnavailable:
+              row?.sourceUnavailable ?? product.sourceUnavailable,
           }
         : {}),
-    },
-    {
-      $set: {
-        priceRefreshAttemptedAt:
-          attemptedAt,
-      },
-    }
+    };
+  });
+}
+function rowFresh(row: SupplierRow, now: Date) {
+  if (!row.sourceUrl?.trim()) return true;
+  const checked =
+    row.priceRefreshAttemptedAt ??
+    row.sourceAvailabilityCheckedAt ??
+    row.priceCheckedAt;
+  return (
+    checked instanceof Date &&
+    Number.isFinite(checked.getTime()) &&
+    getIstanbulDayKey(checked) === getIstanbulDayKey(now)
   );
 }
-
-async function markSourceUnavailable(
+export function isProductPriceFresh(
   product: WithId<ProductDocument>,
-  attemptedAt: Date
+  now = new Date(),
 ) {
-  const products =
-    await getProductsCollection();
-
-  const result =
-    await products.updateOne(
-      {
-        _id: product._id,
-        ...(product.sourceUrl
-          ? {
-              sourceUrl:
-                product.sourceUrl,
-            }
-          : {}),
-      },
-      {
-        $set: {
-          sourceUnavailable:
-            true,
-          ...(product.supplierPrices?.length
-            ? {
-                supplierPrices:
-                  product.supplierPrices.map(
-                    (item, index) =>
-                      index === 0
-                        ? {
-                            ...item,
-                            sourceUnavailable:
-                              true,
-                          }
-                        : item
-                  ),
-              }
-            : {}),
-          sourceAvailabilityCheckedAt:
-            attemptedAt,
-          priceRefreshAttemptedAt:
-            attemptedAt,
-        },
-      }
-    );
-
-  if (
-    result.matchedCount === 0
-  ) {
-    return readLatestProduct(
-      product,
-      withUnavailableState(
-        product,
-        attemptedAt
-      )
-    );
-  }
-
-  return withUnavailableState(
-    product,
-    attemptedAt
-  );
+  return rowsFor(product).every((row) => rowFresh(row, now));
 }
-
-async function performProductPriceRefresh(
-  product: WithId<ProductDocument>
+export const isProductPriceRefreshAttemptedToday = isProductPriceFresh;
+async function refresh(
+  product: WithId<ProductDocument>,
 ): Promise<WithId<ProductDocument>> {
-  const sourceUrl =
-    cleanString(
-      product.sourceUrl
-    );
-
-  if (!sourceUrl) {
-    return product;
-  }
-
-  const attemptedAt =
-    new Date();
-
-  const source =
-    getProductPriceSource(
-      sourceUrl
-    );
-
-  if (!source) {
-    await markRefreshAttempt(
-      product,
-      attemptedAt
-    );
-
-    return withAttemptDate(
-      product,
-      attemptedAt
-    );
-  }
-
-  try {
-    const remote =
-      await fetchProductSourcePrice(
-        sourceUrl
-      );
-
-    const previousPriceUsd =
-      roundCurrency(
-        Number(
-          product.priceUsd
-        ) || 0
-      );
-
-    const remotePriceUsd =
-      roundCurrency(
-        remote.priceUsd
-      );
-
-    const priceChanged =
-      previousPriceUsd !==
-      remotePriceUsd;
-
-    const products =
-      await getProductsCollection();
-
-    const updateResult =
-      await products.updateOne(
-        {
-          _id: product._id,
-          sourceUrl,
-          ...(priceChanged
-            ? {
-                priceUsd:
-                  product.priceUsd,
-              }
-            : {}),
-        },
-        {
-          $set: {
-            ...(priceChanged
-              ? {
-                  priceUsd:
-                    remotePriceUsd,
-                  updatedAt:
-                    attemptedAt,
-                }
-              : {}),
-            priceCheckedAt:
-              attemptedAt,
-            priceRefreshAttemptedAt:
-              attemptedAt,
-            sourceUnavailable:
-              false,
-            ...(product.supplierPrices?.length
-              ? {
-                  supplierPrices:
-                    product.supplierPrices.map(
-                      (item, index) =>
-                        index === 0
-                          ? {
-                              ...item,
-                              priceUsd:
-                                remotePriceUsd,
-                              priceCheckedAt:
-                                attemptedAt,
-                              sourceUnavailable:
-                                false,
-                            }
-                          : item
-                    ),
-                }
-              : {}),
-            sourceAvailabilityCheckedAt:
-              attemptedAt,
-          },
-        }
-      );
-
-    if (
-      updateResult.matchedCount ===
-      0
-    ) {
-      return readLatestProduct(
-        product,
-        product
-      );
-    }
-
-    return withSuccessfulCheck(
-      product,
-      attemptedAt,
-      remotePriceUsd,
-      priceChanged
-    );
-  } catch (error) {
-    if (
-      isProductSourceNotFoundError(
-        error
-      )
-    ) {
-      console.warn(
-        `${getProductPriceSourceLabel(source)} source product is unavailable (HTTP 404 or out of stock); stored price was preserved and product was marked unavailable:`,
-        product._id.toString(),
-        sourceUrl
-      );
-
-      return markSourceUnavailable(
-        product,
-        attemptedAt
-      );
-    }
-
+  const collection = await getProductsCollection();
+  // A caller can hold yesterday's document after a concurrent request refreshed it.
+  const latest = await collection.findOne({ _id: product._id });
+  if (latest) product = latest;
+  const now = new Date();
+  if (isProductPriceFresh(product, now)) return product;
+  const rows = rowsFor(product);
+  let success = false,
+    availabilityChecked = false;
+  for (const row of rows) {
+    if (rowFresh(row, now)) continue;
+    row.priceRefreshAttemptedAt = now;
+    const source = getProductPriceSource(row.sourceUrl!);
+    if (!source || (row.supplier !== "Diğer" && source !== row.supplier))
+      continue;
     try {
-      await markRefreshAttempt(
-        product,
-        attemptedAt
-      );
-    } catch (markError) {
-      console.warn(
-        "Product price refresh attempt timestamp could not be saved:",
-        product._id.toString(),
-        markError instanceof Error
-          ? markError.message
-          : "unknown error"
-      );
+      const remote = await fetchProductSourcePrice(row.sourceUrl!);
+      row.priceUsd = roundCurrency(remote.priceUsd);
+      row.priceCheckedAt = now;
+      row.sourceAvailabilityCheckedAt = now;
+      row.sourceUnavailable = false;
+      success = true;
+      availabilityChecked = true;
+    } catch (error) {
+      if (isProductSourceNotFoundError(error)) {
+        row.sourceUnavailable = true;
+        row.sourceAvailabilityCheckedAt = now;
+        availabilityChecked = true;
+      } else {
+        // Timeouts/5xx never prove that an item is no longer sold. Preserve its state and price.
+        console.warn(
+          "Supplier price check failed; stored data preserved",
+          product._id.toHexString(),
+          row.supplier,
+        );
+      }
     }
-
-    console.warn(
-      "Product price refresh failed; stored price will be used:",
-      product._id.toString(),
-      error instanceof Error
-        ? error.message
-        : "unknown error"
-    );
-
-    return withAttemptDate(
-      product,
-      attemptedAt
-    );
   }
+  const available = rows.find((row) => row.sourceUnavailable !== true);
+  const update = {
+    supplierPrices: rows,
+    priceUsd: available?.priceUsd ?? product.priceUsd,
+    sourceUnavailable: rows.every((row) => row.sourceUnavailable === true),
+    priceRefreshAttemptedAt: now,
+    ...(success ? { priceCheckedAt: now } : {}),
+    ...(availabilityChecked ? { sourceAvailabilityCheckedAt: now } : {}),
+    updatedAt: now,
+  };
+  // Do not overwrite a product edited while its supplier sites were being read.
+  const result = await collection.updateOne(
+    { _id: product._id, updatedAt: product.updatedAt },
+    { $set: update },
+  );
+  if (result.matchedCount === 0)
+    return (await collection.findOne({ _id: product._id })) ?? product;
+  return { ...product, ...update };
 }
-
 export async function refreshProductPriceIfNeeded(
   product: WithId<ProductDocument>,
-  _options?: {
-    force?: boolean;
-  }
-): Promise<WithId<ProductDocument>> {
-  void _options;
-  // force geriye uyumluluk için korunuyor. Günlük limit bilinçli olarak
-  // bypass edilmez.
-  if (
-    isProductPriceFresh(
-      product
-    )
-  ) {
-    return product;
-  }
-
-  const productId =
-    product._id.toString();
-
-  const existingPromise =
-    refreshInFlight.get(
-      productId
-    );
-
-  if (existingPromise) {
-    return existingPromise;
-  }
-
-  const promise =
-    performProductPriceRefresh(
-      product
-    );
-
-  refreshInFlight.set(
-    productId,
-    promise
-  );
-
+  _options?: { force?: boolean },
+) {
+  void _options; // The once-per-Istanbul-day limit also applies to manual refresh.
+  if (isProductPriceFresh(product)) return product;
+  const id = product._id.toHexString(),
+    existing = inFlight.get(id);
+  if (existing) return existing;
+  const promise = refresh(product);
+  inFlight.set(id, promise);
   try {
     return await promise;
   } finally {
-    if (
-      refreshInFlight.get(
-        productId
-      ) === promise
-    ) {
-      refreshInFlight.delete(
-        productId
-      );
-    }
+    if (inFlight.get(id) === promise) inFlight.delete(id);
   }
 }
-
 export async function refreshProductPricesIfNeeded(
-  products:
-    WithId<ProductDocument>[],
-  options?: {
-    force?: boolean;
-  }
-): Promise<
-  WithId<ProductDocument>[]
-> {
-  if (
-    products.length === 0
-  ) {
-    return [];
-  }
-
-  const results:
-    WithId<ProductDocument>[] =
-    new Array(
-      products.length
-    );
-
-  let nextIndex = 0;
-
-  const workerCount =
-    Math.min(
-      PRODUCT_PRICE_REFRESH_CONCURRENCY,
-      products.length
-    );
-
-  const worker = async () => {
-    while (true) {
-      const index =
-        nextIndex;
-
-      nextIndex += 1;
-
-      if (
-        index >=
-        products.length
-      ) {
-        return;
-      }
-
-      results[index] =
-        await refreshProductPriceIfNeeded(
-          products[index],
-          options
-        );
-    }
-  };
-
+  products: WithId<ProductDocument>[],
+  options?: { force?: boolean },
+) {
+  const results: WithId<ProductDocument>[] = new Array(products.length);
+  let next = 0;
   await Promise.all(
-    Array.from(
-      {
-        length:
-          workerCount,
-      },
-      () => worker()
-    )
+    Array.from({ length: Math.min(3, products.length) }, async () => {
+      while (next < products.length) {
+        const index = next++;
+        results[index] = await refreshProductPriceIfNeeded(
+          products[index],
+          options,
+        );
+      }
+    }),
   );
-
   return results;
 }

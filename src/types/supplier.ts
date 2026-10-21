@@ -14,6 +14,9 @@ export const DEFAULT_PRODUCT_SUPPLIERS: ProductSupplier[] = [
 ];
 
 export interface ProductSupplierPrice {
+  productCode?: string;
+  priceRefreshAttemptedAt?: string;
+  sourceAvailabilityCheckedAt?: string;
   supplier: ProductSupplier;
   priceUsd: number;
   sourceUrl?: string;
