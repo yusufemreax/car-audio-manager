@@ -73,16 +73,26 @@ async function publicView(
   const storage = String(
     specifications.storage ?? preparation.multimediaStorage ?? "",
   );
+  const capacity = (value: string) => {
+    const cleaned = value
+      .trim()
+      .replace(/\s*GB\s*$/i, "")
+      .trim();
+    return cleaned ? `${cleaned}GB` : "";
+  };
+  const brand = (
+    screen?.brand ??
+    preparation.items.find((item) => item.category === "multimedia")?.brand ??
+    ""
+  ).trim();
   const title = [
-    ram && storage
-      ? `${ram} GB RAM / ${storage} GB`
-      : screen
-        ? `${screen.brand} ${screen.model}`
-        : "Multimedya",
-    preparation.additionalDescription,
+    brand || "Multimedya",
+    capacity(ram),
+    capacity(storage),
+    preparation.additionalDescription?.trim(),
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(" - ");
   const images = [
     { url: preparation.installationImageUrl, label: "Örnek montaj" },
     { url: screen?.imageUrl, label: "Multimedya ekranı" },
