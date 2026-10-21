@@ -5,6 +5,7 @@ import { portalStore, type AppointmentDocument } from "./store";
 import { multimediaForBooking } from "./catalog";
 import { createAppointmentOffer } from "./crm";
 import { getPortalOrderRequirements } from "@/lib/customer-offer-stock-workflow";
+import { queueAdminNotice } from "@/lib/admin-notifications";
 import { PortalError } from "./http";
 import {
   INSTALLATION_MINUTES,
@@ -62,6 +63,11 @@ export async function bookAppointment(
   user: PortalUser | null,
   now = new Date(),
 ) {
+  if (!user)
+    throw new PortalError(
+      "Randevu oluşturmak için giriş yapın veya üye olun.",
+      401,
+    );
   const start = new Date(input.startsAt);
   const { db, appointments, slots } = await portalStore();
   const customer = user
@@ -135,6 +141,13 @@ export async function bookAppointment(
       );
       Object.assign(appointment, link);
       await appointments.insertOne(appointment, { session });
+      await queueAdminNotice(db, session, {
+        _id: `appointment:${appointment._id.toHexString()}`,
+        title: "Yeni randevu talebi",
+        body: `${customer.firstName} ${customer.lastName} · ${multimedia.vehicle}`,
+        url: "/customer-appointments",
+        createdAt: now,
+      });
     });
   } catch (error) {
     if (error instanceof MongoServerError && error.code === 11000) {

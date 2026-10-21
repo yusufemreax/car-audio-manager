@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
+import { deliverAdminPush } from "@/lib/admin-notifications";
 import { customerSession } from "@/lib/portal/auth";
 import {
   vehicleRequestSchema,
@@ -21,10 +22,16 @@ export async function POST(request: NextRequest) {
       throw new PortalError(
         "Marka, model ve geçerli bir yıl girin. Kasa bilgisi isteğe bağlıdır.",
       );
-    return json(
-      await submitVehicleRequest(input.data, await customerSession(request)),
-      201,
+    const result = await submitVehicleRequest(
+      input.data,
+      await customerSession(request),
     );
+    after(() =>
+      deliverAdminPush().catch(() => {
+        console.warn("Admin push processing deferred");
+      }),
+    );
+    return json(result, 201);
   } catch (error) {
     return failure(error);
   }

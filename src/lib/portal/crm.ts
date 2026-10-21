@@ -17,12 +17,13 @@ export const registrationVehiclesSchema = z
       plate: z.string().trim().max(30).optional(),
     }),
   )
-  .min(1)
-  .max(10);
+  .max(10)
+  .default([]);
 
 export async function catalogVehicles(
   input: z.infer<typeof registrationVehiclesSchema>,
 ) {
+  if (!input.length) return [];
   const catalog = await publicVehicles();
   return input.map((selection): CustomerVehicle => {
     for (const brand of catalog)

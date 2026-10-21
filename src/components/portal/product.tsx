@@ -12,13 +12,21 @@ import {
 import type { PortalMultimedia } from "@/types/portal";
 import { portalFetch, PortalButton, PortalMessage, money } from "./shared";
 import { PortalBooking } from "./booking";
+import { catalogReturn } from "./navigation";
 export function PortalProduct({ id }: { id: string }) {
   const [product, setProduct] = useState<PortalMultimedia | null>(null);
   const [error, setError] = useState("");
   const [image, setImage] = useState(0);
   const [booking, setBooking] = useState(false);
+  const [back, setBack] = useState("/musteri#arac-sec");
   useEffect(() => {
     let active = true;
+    const params = new URLSearchParams(window.location.search);
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setBack(catalogReturn(params.get("geri")));
+      if (params.get("randevu") === "1") setBooking(true);
+    });
     void portalFetch<PortalMultimedia>(
       `/api/portal/multimedias/${encodeURIComponent(id)}`,
     )
@@ -35,7 +43,7 @@ export function PortalProduct({ id }: { id: string }) {
   return (
     <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
       <Link
-        href="/musteri#arac-sec"
+        href={back}
         className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500"
       >
         <ArrowLeft size={17} /> Paketlere dön

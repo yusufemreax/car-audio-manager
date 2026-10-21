@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import Link from "next/link";
+import { disableAdminPush } from "@/components/admin/notification-client";
 import { usePathname } from "next/navigation";
 
 import {
@@ -156,6 +157,7 @@ export function AppSidebar() {
     setLoggingOut(true);
 
     try {
+      try { await disableAdminPush(); } catch { /* Logout must remain available offline. */ }
       await fetch("/api/auth/logout", {
         method: "POST",
         cache: "no-store",

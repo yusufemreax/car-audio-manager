@@ -37,10 +37,10 @@ export function VehicleChoices({
       disabled={disabled}
       className="space-y-4 rounded-2xl border border-slate-200 p-4"
     >
-      <legend className="px-2 font-bold">Araçlarım</legend>
+      <legend className="px-2 font-bold">Araçlarım (isteğe bağlı)</legend>
       <p className="text-sm text-slate-500">
-        En az bir araç seçin. İsterseniz birden fazla araç ekleyebilirsiniz.
-        Plaka isteğe bağlıdır.
+        İsterseniz şimdi araç ekleyebilir veya daha sonra randevu sırasında
+        eklenmesini sağlayabilirsiniz. Plaka isteğe bağlıdır.
       </p>
       {error && (
         <p role="alert" className="text-sm text-red-700">
@@ -57,7 +57,7 @@ export function VehicleChoices({
             onChange(value.map((item, i) => (i === index ? next : item)))
           }
           onRemove={
-            value.length > 1
+            value.length > 0
               ? () => onChange(value.filter((_, i) => i !== index))
               : undefined
           }
@@ -78,7 +78,7 @@ export function VehicleChoices({
           ])
         }
       >
-        + Başka araç ekle
+        {value.length ? "+ Başka araç ekle" : "+ Araç ekle (isteğe bağlı)"}
       </button>
       <div>
         <VehicleRequestButton />

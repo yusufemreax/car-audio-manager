@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { safePortalNext } from "./navigation";
 import { VehicleChoices, type VehicleChoice } from "./vehicle-choices";
 import type { PortalUser, PortalAppointment } from "@/types/portal";
 import {
@@ -18,9 +19,7 @@ export function PortalAccount() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [vehicles, setVehicles] = useState<VehicleChoice[]>([
-    { generationId: "", plate: "" },
-  ]);
+  const [vehicles, setVehicles] = useState<VehicleChoice[]>([]);
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -32,6 +31,13 @@ export function PortalAccount() {
     void portalFetch<PortalUser | null>("/api/portal/auth")
       .then(async (account) => {
         if (!active) return;
+        const next = safePortalNext(
+          new URLSearchParams(window.location.search).get("next"),
+        );
+        if (account && next) {
+          window.location.assign(next);
+          return;
+        }
         setUser(account);
         if (account) {
           const records = await portalFetch<PortalAppointment[]>(
@@ -209,6 +215,13 @@ export function PortalAccount() {
                     body: JSON.stringify({ action: mode, ...form, vehicles }),
                   },
                 );
+                const next = safePortalNext(
+                  new URLSearchParams(window.location.search).get("next"),
+                );
+                if (next) {
+                  window.location.assign(next);
+                  return;
+                }
                 setUser(account);
                 setForm({ ...form, password: "" });
                 window.dispatchEvent(new Event("portal-auth-change"));

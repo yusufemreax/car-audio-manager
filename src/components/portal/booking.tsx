@@ -1,14 +1,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  CalendarDays,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Phone,
-} from "lucide-react";
+import { catalogReturn } from "./navigation";
+import { CalendarDays, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +20,7 @@ import type {
 } from "@/types/portal";
 import {
   portalFetch,
+  PortalHttpError,
   PortalButton,
   PortalMessage,
   fieldClass,
@@ -67,7 +63,7 @@ export function PortalBooking({
   product: PortalMultimedia;
   onProductChange: (product: PortalMultimedia) => void;
 }) {
-  const [step, setStep] = useState<"contact" | "calendar" | "done">("contact");
+  const [step, setStep] = useState<"auth" | "calendar" | "done">("auth");
   const [contact, setContact] = useState({
     firstName: "",
     lastName: "",
@@ -78,6 +74,8 @@ export function PortalBooking({
   const [availability, setAvailability] = useState<PortalAvailability | null>(
     null,
   );
+  const hoursRef = useRef<HTMLDivElement>(null);
+  const scrollToHours = useRef(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [month, setMonth] = useState("");
@@ -94,8 +92,7 @@ export function PortalBooking({
     setDate((previous) =>
       data.days.some((day) => day.date === previous && day.slots.length)
         ? previous
-        : (data.days.find((day) => day.slots.length)?.date ??
-          data.earliestDate),
+        : "",
     );
     setTime((previous) =>
       data.days.some((day) => day.slots.includes(previous)) ? previous : "",
@@ -115,7 +112,7 @@ export function PortalBooking({
     setDate("");
     setTime("");
     setMonth("");
-    setStep("contact");
+    setStep("auth");
     setRequestId(bookingRequestId());
     void Promise.all([
       portalFetch<PortalUser | null>("/api/portal/auth"),
@@ -138,7 +135,7 @@ export function PortalBooking({
               }
             : { firstName: "", lastName: "", phone: "" },
         );
-        setStep(account ? "calendar" : "contact");
+        setStep(account ? "calendar" : "auth");
       })
       .catch((error) => {
         if (active) setError(error.message);
@@ -154,6 +151,19 @@ export function PortalBooking({
       window.clearInterval(interval);
     };
   }, [open, loadAvailability, product.generationId]);
+  useEffect(() => {
+    if (!date || !scrollToHours.current) return;
+    scrollToHours.current = false;
+    const frame = requestAnimationFrame(() =>
+      hoursRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [date]);
   const slots =
     availability?.days.find((day) => day.date === date)?.slots ?? [];
   const [year, number] = month ? month.split("-").map(Number) : [2026, 1];
@@ -162,7 +172,7 @@ export function PortalBooking({
   const firstMonth = availability?.earliestDate.slice(0, 7) ?? month;
   const lastMonth = availability?.days.at(-1)?.date.slice(0, 7) ?? month;
   const submit = async () => {
-    if (submitting || !time || !requestId) return;
+    if (submitting || !user || !time || !requestId) return;
     setSubmitting(true);
     setError("");
     try {
@@ -183,6 +193,11 @@ export function PortalBooking({
       setSaved(appointment);
       setStep("done");
     } catch (error) {
+      if (error instanceof PortalHttpError && error.status === 401) {
+        setUser(null);
+        setStep("auth");
+        return;
+      }
       setError(
         error instanceof Error ? error.message : "Randevu kaydedilemedi.",
       );
@@ -246,116 +261,25 @@ export function PortalBooking({
                 </p>
               </div>
             </div>
-          ) : step === "contact" ? (
-            <form
-              id="portal-contact"
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                let phone = contact.phone.replace(/\D/g, "");
-                if (phone.length === 12 && phone.startsWith("90"))
-                  phone = phone.slice(2);
-                if (phone.length === 11 && phone.startsWith("0"))
-                  phone = phone.slice(1);
-                if (
-                  !/^5\d{9}$/.test(phone) ||
-                  contact.firstName.trim().length < 2 ||
-                  contact.lastName.trim().length < 2
-                ) {
-                  setError(
-                    "Ad, soyad ve cep telefonu bilgilerinizi kontrol edin.",
-                  );
-                  return;
-                }
-                setContact({
-                  firstName: contact.firstName.trim(),
-                  lastName: contact.lastName.trim(),
-                  phone,
-                });
-                setError("");
-                setStep("calendar");
-              }}
-            >
-              <p className="text-sm text-slate-500">
-                Randevu için iletişim bilgilerinizi bırakın. Üyelik zorunlu
-                değil.
+          ) : step === "auth" ? (
+            <div className="space-y-5 py-4">
+              <p className="text-sm leading-7 text-slate-600">
+                Montaj randevusu oluşturmak ve randevunuzu takip etmek için
+                hesabınıza giriş yapın veya ücretsiz üye olun.
               </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-sm font-semibold">
-                  Adınız
-                  <input
-                    className={fieldClass}
-                    required
-                    minLength={2}
-                    maxLength={60}
-                    autoComplete="given-name"
-                    value={contact.firstName}
-                    onChange={(event) =>
-                      setContact({ ...contact, firstName: event.target.value })
-                    }
-                  />
-                </label>
-                <label className="space-y-2 text-sm font-semibold">
-                  Soyadınız
-                  <input
-                    className={fieldClass}
-                    required
-                    minLength={2}
-                    maxLength={60}
-                    autoComplete="family-name"
-                    value={contact.lastName}
-                    onChange={(event) =>
-                      setContact({ ...contact, lastName: event.target.value })
-                    }
-                  />
-                </label>
-              </div>
-              <label className="block space-y-2 text-sm font-semibold">
-                Cep telefonu
-                <input
-                  className={fieldClass}
-                  required
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  minLength={10}
-                  maxLength={18}
-                  placeholder="05xx xxx xx xx"
-                  value={contact.phone}
-                  onChange={(event) =>
-                    setContact({ ...contact, phone: event.target.value })
-                  }
-                />
-              </label>
-              <PortalMessage>
-                <Phone className="mr-2 inline" size={16} />
-                Telefon numaranızın doğru olduğundan emin olunuz. Randevu için
-                sizinle bu numaradan iletişime geçilecektir.
-              </PortalMessage>
-              <p className="text-xs text-slate-500">
-                Hesabınız var mı?{" "}
-                <Link
-                  href="/musteri/hesabim"
-                  className="font-semibold underline"
-                >
-                  Giriş yapabilir veya üye olabilirsiniz.
-                </Link>
-              </p>
-            </form>
+              <Link
+                href={`/musteri/hesabim?next=${encodeURIComponent(`/musteri/multimedya/${product.id}?randevu=1&geri=${encodeURIComponent(catalogReturn(typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("geri")))}`)}`}
+                className="inline-flex rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950"
+              >
+                Giriş yap / Üye ol →
+              </Link>
+            </div>
           ) : (
             <div className="space-y-5">
               <div className="flex flex-wrap justify-between gap-2 rounded-xl bg-slate-50 p-3 text-sm">
                 <span>
                   {contact.firstName} {contact.lastName} · {contact.phone}
                 </span>
-                {!user && (
-                  <button
-                    onClick={() => setStep("contact")}
-                    className="font-semibold underline"
-                  >
-                    Bilgileri değiştir
-                  </button>
-                )}
               </div>
               {user &&
               (user.vehicles ?? []).some(
@@ -452,6 +376,13 @@ export function PortalBooking({
                         aria-pressed={date === current}
                         disabled={!available?.slots.length || submitting}
                         onClick={() => {
+                          if (date === current) {
+                            hoursRef.current?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                          }
+                          scrollToHours.current = true;
                           setDate(current);
                           setTime("");
                         }}
@@ -463,7 +394,11 @@ export function PortalBooking({
                   })}
                 </div>
               </section>
-              <div>
+              <div
+                ref={hoursRef}
+                tabIndex={-1}
+                className="scroll-mt-4 focus:outline-none"
+              >
                 <h3 className="mb-3 font-bold">
                   {date ? dateLabel(date) : "Tarih seçin"} · Saat
                 </h3>
@@ -482,7 +417,9 @@ export function PortalBooking({
                 </div>
                 {!slots.length && (
                   <p className="text-sm text-slate-500">
-                    Bu tarihte uygun saat kalmadı. Başka bir gün seçin.
+                    {date
+                      ? "Bu tarihte uygun saat kalmadı. Başka bir gün seçin."
+                      : "Saatleri görmek için takvimden bir gün seçin."}
                   </p>
                 )}
               </div>
@@ -501,15 +438,6 @@ export function PortalBooking({
           >
             {step === "done" ? "Kapat" : "Vazgeç"}
           </PortalButton>
-          {!loading && step === "contact" && (
-            <PortalButton
-              type="submit"
-              form="portal-contact"
-              disabled={!availability}
-            >
-              Devam →
-            </PortalButton>
-          )}
           {!loading && step === "calendar" && (
             <PortalButton
               disabled={!time || submitting}

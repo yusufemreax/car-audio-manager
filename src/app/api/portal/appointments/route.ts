@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
+import { deliverAdminPush } from "@/lib/admin-notifications";
 import { z } from "zod";
 import {
   availableAppointments,
@@ -26,6 +27,11 @@ export async function POST(request: NextRequest) {
     requireSameOrigin(request);
     await rateLimit(request, "book", 8, 3600);
     const user = await customerSession(request);
+    if (!user)
+      throw new PortalError(
+        "Randevu oluşturmak için giriş yapın veya üye olun.",
+        401,
+      );
     const body = await request.json();
     const schema = z.object({
       multimediaId: z.string().regex(/^[a-f0-9]{24}$/i),
@@ -41,7 +47,13 @@ export async function POST(request: NextRequest) {
         "İletişim bilgilerini ve randevu saatini kontrol edin.",
       );
     await rateLimit(request, "book-phone", 5, 3600, input.data.contact.phone);
-    return json(await bookAppointment(input.data, user), 201);
+    const appointment = await bookAppointment(input.data, user);
+    after(() =>
+      deliverAdminPush().catch(() => {
+        console.warn("Admin push processing deferred");
+      }),
+    );
+    return json(appointment, 201);
   } catch (error) {
     return failure(error);
   }

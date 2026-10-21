@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { PortalUser } from "@/types/portal";
 import { portalStore } from "./store";
 import { PortalError } from "./http";
+import { queueAdminNotice } from "@/lib/admin-notifications";
 
 export const vehicleRequestSchema = z.object({
   requestId: z.string().uuid(),
@@ -29,20 +30,35 @@ export async function submitVehicleRequest(
   input: z.infer<typeof vehicleRequestSchema>,
   user: PortalUser | null,
 ) {
-  const { vehicleRequests } = await portalStore();
+  const { db, vehicleRequests } = await portalStore();
+  const id = new ObjectId();
+  const session = db.client.startSession();
   try {
-    await vehicleRequests.insertOne({
-      ...input,
-      ...(user
-        ? {
-            accountId: new ObjectId(user.id),
-            customer: {
-              name: `${user.firstName} ${user.lastName}`,
-              phone: user.phone,
-            },
-          }
-        : {}),
-      createdAt: new Date(),
+    await session.withTransaction(async () => {
+      await vehicleRequests.insertOne(
+        {
+          _id: id,
+          ...input,
+          ...(user
+            ? {
+                accountId: new ObjectId(user.id),
+                customer: {
+                  name: `${user.firstName} ${user.lastName}`,
+                  phone: user.phone,
+                },
+              }
+            : {}),
+          createdAt: new Date(),
+        },
+        { session },
+      );
+      await queueAdminNotice(db, session, {
+        _id: `vehicle-request:${id.toHexString()}`,
+        title: "Yeni araç isteği",
+        body: `${input.brand} ${input.model} · ${input.year}${input.generation ? ` · ${input.generation}` : ""}`,
+        url: "/vehicle-requests",
+        createdAt: new Date(),
+      });
     });
   } catch (error) {
     if (!(error instanceof MongoServerError) || error.code !== 11000)
@@ -62,6 +78,8 @@ export async function submitVehicleRequest(
         "Bu işlem anahtarı kullanılmış. Yeni talep için formu kapatıp yeniden açın.",
         409,
       );
+  } finally {
+    await session.endSession();
   }
   return { received: true };
 }

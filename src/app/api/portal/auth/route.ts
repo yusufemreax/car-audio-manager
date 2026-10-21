@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       const selected = registrationVehiclesSchema.safeParse(body.vehicles);
       if (!selected.success)
         throw new PortalError(
-          "En az bir araç için marka, model ve kasa seçin. En fazla 10 araç ekleyebilirsiniz.",
+          "Eklediğiniz araçların marka, model ve kasasını kontrol edin. En fazla 10 araç ekleyebilirsiniz.",
         );
       const vehicles = await catalogVehicles(selected.data);
       const document = {

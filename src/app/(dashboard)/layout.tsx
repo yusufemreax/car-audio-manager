@@ -1,4 +1,15 @@
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import type { Metadata } from "next";
+import { AdminNotifications } from "@/components/admin/notifications";
+export const metadata: Metadata = {
+  manifest: "/admin.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Aksoy Admin",
+    statusBarStyle: "default",
+  },
+  icons: { apple: "/admin-icon-192.png" },
+};
 
 import {
   SidebarInset,
@@ -23,6 +34,7 @@ export default function DashboardLayout({
             PC'de sidebar sabit olduğu için gizle.
           */}
           <SidebarTrigger className="md:hidden" />
+          <AdminNotifications />
         </header>
 
         {/* CONTENT */}

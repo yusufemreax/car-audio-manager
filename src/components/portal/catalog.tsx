@@ -2,6 +2,7 @@
 "use client";
 import Link from "next/link";
 import { VehicleRequestButton } from "./vehicle-request";
+import { catalogReturn } from "./navigation";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
@@ -32,8 +33,34 @@ export function PortalCatalog() {
   useEffect(() => {
     let active = true;
     void portalFetch<PortalVehicle[]>("/api/portal/vehicles")
-      .then((data) => {
-        if (active) setVehicles(data);
+      .then(async (data) => {
+        if (!active) return;
+        setVehicles(data);
+        const params = new URLSearchParams(window.location.search);
+        const brand = data.find((item) => item.id === params.get("marka"));
+        const model = brand?.models.find(
+          (item) => item.id === params.get("model"),
+        );
+        const generation = model?.generations.find(
+          (item) => item.id === params.get("kasa"),
+        );
+        setBrandId(brand?.id ?? "");
+        setModelId(model?.id ?? "");
+        setGenerationId(generation?.id ?? "");
+        if (generation && params.get("paketler") === "1") {
+          setLoading(true);
+          try {
+            const products = await portalFetch<PortalMultimedia[]>(
+              `/api/portal/multimedias?generationId=${encodeURIComponent(generation.id)}`,
+            );
+            if (active) {
+              setProducts(products);
+              setSearched(true);
+            }
+          } finally {
+            if (active) setLoading(false);
+          }
+        }
       })
       .catch((error) => {
         if (active) setError(error.message);
@@ -47,6 +74,21 @@ export function PortalCatalog() {
   }, []);
   const brand = vehicles.find((item) => item.id === brandId);
   const model = brand?.models.find((item) => item.id === modelId);
+  const selectionPath = (
+    brand = brandId,
+    model = modelId,
+    generation = generationId,
+    searched = false,
+  ) => {
+    const params = new URLSearchParams();
+    if (brand) params.set("marka", brand);
+    if (model) params.set("model", model);
+    if (generation) params.set("kasa", generation);
+    if (searched) params.set("paketler", "1");
+    return `/musteri?${params}#arac-sec`;
+  };
+  const remember = (path: string) =>
+    window.history.replaceState(window.history.state, "", path);
   const reset = () => {
     setProducts([]);
     setSearched(false);
@@ -159,6 +201,7 @@ export function PortalCatalog() {
           onSubmit={async (event) => {
             event.preventDefault();
             if (!generationId || loading) return;
+            remember(selectionPath(brandId, modelId, generationId, true));
             setLoading(true);
             setError("");
             setSearched(false);
@@ -189,6 +232,7 @@ export function PortalCatalog() {
               value={brandId}
               onChange={(event) => {
                 setBrandId(event.target.value);
+                remember(selectionPath(event.target.value, "", ""));
                 setModelId("");
                 setGenerationId("");
                 reset();
@@ -213,6 +257,7 @@ export function PortalCatalog() {
               value={modelId}
               onChange={(event) => {
                 setModelId(event.target.value);
+                remember(selectionPath(brandId, event.target.value, ""));
                 setGenerationId("");
                 reset();
               }}
@@ -234,6 +279,7 @@ export function PortalCatalog() {
               value={generationId}
               onChange={(event) => {
                 setGenerationId(event.target.value);
+                remember(selectionPath(brandId, modelId, event.target.value));
                 reset();
               }}
             >
@@ -274,7 +320,7 @@ export function PortalCatalog() {
               <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
                 {products.map((product) => (
                   <Link
-                    href={`/musteri/multimedya/${product.id}`}
+                    href={`/musteri/multimedya/${product.id}?geri=${encodeURIComponent(catalogReturn(selectionPath(brandId, modelId, generationId, true)))}`}
                     key={product.id}
                     className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
                   >

@@ -1,5 +1,13 @@
 "use client";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+export class PortalHttpError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
 export async function portalFetch<T>(
   url: string,
   options: RequestInit = {},
@@ -14,7 +22,10 @@ export async function portalFetch<T>(
   });
   const result = await response.json();
   if (!response.ok || !result.success)
-    throw new Error(result.message ?? "İşlem tamamlanamadı.");
+    throw new PortalHttpError(
+      result.message ?? "İşlem tamamlanamadı.",
+      response.status,
+    );
   return result.data as T;
 }
 export const money = (value: number) =>
