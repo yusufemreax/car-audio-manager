@@ -1,8 +1,10 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { ObjectId } from "mongodb";
 import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/auth-session";
 import { portalStore } from "@/lib/portal/store";
-import { json, failure, PortalError } from "@/lib/portal/http";
+import { completeVehicleRequest, deliverVehicleRequestPush } from "@/lib/portal/vehicle-request-notifications";
+import { json, failure, PortalError, requireSameOrigin } from "@/lib/portal/http";
+export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   try {
     if (
@@ -19,9 +21,13 @@ export async function GET(request: NextRequest) {
       .limit(101)
       .toArray();
     const page = records.slice(0, 100);
+    after(() => deliverVehicleRequestPush(new URL(request.url).origin).catch(() => console.warn("Customer push retry deferred")));
     return json({
       records: page.map((record) => ({
         id: record._id.toHexString(),
+        status: record.status ?? "pending",
+        completedAt: record.completedAt?.toISOString(),
+        notificationsEnabled: Boolean(record.pushSubscription),
         brand: record.brand,
         model: record.model,
         year: record.year,
@@ -34,4 +40,16 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return failure(error);
   }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    if (!(await verifySessionToken(request.cookies.get(AUTH_COOKIE_NAME)?.value))) throw new PortalError("Admin girişi gerekli.", 401);
+    requireSameOrigin(request);
+    const body = await request.json();
+    if (typeof body.id !== "string" || body.status !== "completed") throw new PortalError("İşlem geçersiz.");
+    await completeVehicleRequest(body.id);
+    after(() => deliverVehicleRequestPush(new URL(request.url).origin).catch(() => console.warn("Customer push delivery deferred")));
+    return json({ completed: true });
+  } catch (error) { return failure(error); }
 }

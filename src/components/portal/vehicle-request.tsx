@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { PortalButton, PortalMessage, fieldClass, portalFetch } from "./shared";
+import { customerPushSupported, prepareCustomerPush, customerPushSubscription } from "./customer-push";
 function requestKey() {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -31,6 +32,36 @@ export function VehicleRequestButton() {
     year: "",
     generation: "",
   });
+  const [notificationStep, setNotificationStep] = useState(false);
+  const [supported, setSupported] = useState(false);
+  const [prepared, setPrepared] = useState<Awaited<ReturnType<typeof prepareCustomerPush>>>(null);
+  const [subscription, setSubscription] = useState<PushSubscriptionJSON | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      setSupported(customerPushSupported());
+      try {
+        const ready = await prepareCustomerPush();
+        if (!active) return;
+        setPrepared(ready);
+        if (ready && Notification.permission === "granted") {
+          const existing = await customerPushSubscription(ready);
+          if (active) setSubscription(existing);
+        }
+      } catch { /* Request submission remains available even when push setup fails. */ }
+    });
+    return () => { active = false; };
+  }, [open]);
+  async function sendRequest(push: PushSubscriptionJSON | null) {
+    setBusy(true);setError("");
+    try {
+      await portalFetch("/api/portal/vehicle-requests", { method: "POST", body: JSON.stringify({ ...form, year: Number(form.year), requestId, ...(push ? { pushSubscription: push } : {}) }) });
+      setSubscription(push);setSent(true);setNotificationStep(false);
+    } catch(error) { setError(error instanceof Error ? error.message : "Talep gönderilemedi."); }
+    finally { setBusy(false); }
+  }
   return (
     <>
       <button
@@ -40,6 +71,7 @@ export function VehicleRequestButton() {
           setForm({ brand: "", model: "", year: "", generation: "" });
           setRequestId(requestKey());
           setSent(false);
+          setNotificationStep(false);setPrepared(null);setSubscription(null);
           setError("");
           setOpen(true);
         }}
@@ -59,41 +91,28 @@ export function VehicleRequestButton() {
               event.preventDefault();
               event.stopPropagation();
               if (busy || sent) return;
-              setBusy(true);
-              setError("");
-              try {
-                await portalFetch("/api/portal/vehicle-requests", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    ...form,
-                    year: Number(form.year),
-                    requestId,
-                  }),
-                });
-                setSent(true);
-              } catch (error) {
-                setError(
-                  error instanceof Error
-                    ? error.message
-                    : "Talep gönderilemedi.",
-                );
-              } finally {
-                setBusy(false);
-              }
+              if (!subscription) { setError("");setNotificationStep(true);return; }
+              await sendRequest(subscription);
             }}
           >
             <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
-              <DialogTitle>Aracımı bulamadım</DialogTitle>
+              <DialogTitle>{notificationStep ? "Aracınız eklenince haber verelim" : "Aracımı bulamadım"}</DialogTitle>
               <DialogDescription>
-                Aracınızın bilgilerini yazarak bize iletin. Talebinizi
-                inceleyelim.
+                {notificationStep ? "Araç isteğiniz tamamlanınca size bildirim göndereceğiz. Bu cihazda bildirimleri açabilirsiniz." : "Aracınızın bilgilerini yazarak bize iletin. Talebinizi inceleyelim."}
               </DialogDescription>
             </DialogHeader>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
               {sent ? (
                 <PortalMessage>
-                  Talebiniz iletildi. Araç bilgilerinizi inceleyeceğiz.
+                  Talebiniz iletildi. Araç bilgilerinizi inceleyeceğiz. {subscription ? "İsteğiniz tamamlandığında bu cihaza bildirim göndereceğiz." : "Bu talep için cihaz bildirimi açılmadı."}
                 </PortalMessage>
+              ) : notificationStep ? (
+                <div className="space-y-3 rounded-xl bg-amber-50 p-4 text-sm leading-6">
+                  <p>İzin penceresinde “İzin ver” seçeneğini seçin. Bildirim sizi araç seçim sayfasına götürecek.</p>
+                  {!supported && <p>Bu tarayıcı cihaz bildirimini desteklemiyor. iPhone / iPad kullanıyorsanız siteyi Safari’den ana ekrana ekleyip ana ekran simgesinden açın.</p>}
+                  {supported && Notification.permission === "denied" && <p>Bildirim izni kapalı. Tarayıcı / cihaz ayarlarından bu site için izni açıp tekrar deneyebilirsiniz.</p>}
+                  <p className="text-xs text-slate-600">Bildirim izni isteğe bağlıdır; izin vermeden de araç isteğinizi gönderebilirsiniz.</p>
+                </div>
               ) : (
                 <>
                   {(
@@ -138,7 +157,7 @@ export function VehicleRequestButton() {
               )}
               {error && <PortalMessage error>{error}</PortalMessage>}
             </div>
-            <DialogFooter className="shrink-0 border-t px-6 py-4">
+            <DialogFooter className="shrink-0 flex-wrap border-t px-6 py-4">
               <PortalButton
                 type="button"
                 secondary
@@ -147,7 +166,23 @@ export function VehicleRequestButton() {
               >
                 {sent ? "Kapat" : "Vazgeç"}
               </PortalButton>
-              {!sent && (
+              {!sent && notificationStep && <>
+                <PortalButton type="button" secondary disabled={busy} onClick={() => { void sendRequest(null); }}>Bildirimsiz gönder</PortalButton>
+                {supported && Notification.permission !== "denied" && <PortalButton type="button" disabled={busy} onClick={async () => {
+                  if (busy) return;
+                  // Ask before any await: Safari requires a direct user gesture.
+                  const permission = Notification.requestPermission();
+                  setBusy(true);setError("");
+                  try {
+                    if (await permission !== "granted") throw new Error("Bildirim izni verilmedi. İsterseniz bildirimsiz gönderebilirsiniz.");
+                    const ready = prepared ?? await prepareCustomerPush();
+                    if (!ready) throw new Error("Bu cihazda bildirim açılamadı.");
+                    const push = await customerPushSubscription(ready);
+                    await sendRequest(push);
+                  } catch(error) { setError(error instanceof Error ? error.message : "Bildirim açılamadı.");setBusy(false); }
+                }}>{busy ? "Gönderiliyor..." : "Bildirimleri aç ve gönder"}</PortalButton>}
+              </>}
+              {!sent && !notificationStep && (
                 <PortalButton type="submit" disabled={busy}>
                   {busy ? "Gönderiliyor..." : "Talebi gönder"}
                 </PortalButton>

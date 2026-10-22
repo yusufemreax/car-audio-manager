@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 import Link from "next/link";
+import { WhatsAppContact } from "./whatsapp-contact";
 import { useEffect, useState } from "react";
 import type { PortalUser } from "@/types/portal";
 import { portalFetch } from "./shared";
@@ -65,7 +66,8 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       {children}
-      <footer className="mt-16 border-t border-slate-200 bg-white">
+      <WhatsAppContact />
+      <footer className="mt-16 border-t border-slate-200 bg-white pb-20">
         <div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 px-5 py-8 text-sm sm:flex-row sm:px-8">
           <p className="font-bold">
             AKSOY TUNING{" "}

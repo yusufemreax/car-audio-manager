@@ -3,10 +3,12 @@ import { z } from "zod";
 import type { PortalUser } from "@/types/portal";
 import { portalStore } from "./store";
 import { PortalError } from "./http";
-import { queueAdminNotice } from "@/lib/admin-notifications";
+import type { CustomerPushSubscription } from "./vehicle-request-notifications";
+import { pushSubscriptionSchema, queueAdminNotice } from "@/lib/admin-notifications";
 
 export const vehicleRequestSchema = z.object({
   requestId: z.string().uuid(),
+  pushSubscription: pushSubscriptionSchema.optional(),
   brand: z.string().trim().min(1).max(100),
   model: z.string().trim().min(1).max(100),
   year: z
@@ -17,6 +19,9 @@ export const vehicleRequestSchema = z.object({
   generation: z.string().trim().max(100).optional().default(""),
 });
 export interface VehicleRequestDocument {
+  status?: "pending" | "completed";
+  completedAt?: Date;
+  pushSubscription?: CustomerPushSubscription;
   requestId: string;
   brand: string;
   model: string;
@@ -39,6 +44,7 @@ export async function submitVehicleRequest(
         {
           _id: id,
           ...input,
+          status: "pending",
           ...(user
             ? {
                 accountId: new ObjectId(user.id),

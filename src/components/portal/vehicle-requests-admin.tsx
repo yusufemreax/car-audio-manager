@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button";
 import { portalFetch, fullDate } from "./shared";
 interface VehicleRequest {
   id: string;
+  status?: "pending" | "completed";
+  completedAt?: string;
+  notificationsEnabled?: boolean;
   brand: string;
   model: string;
   year: number;
@@ -16,6 +19,7 @@ export function VehicleRequestsAdmin() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [completing, setCompleting] = useState<string | null>(null);
   const load = useCallback(async (after?: string) => {
     setLoading(true);
     setError("");
@@ -47,7 +51,7 @@ export function VehicleRequestsAdmin() {
         <div>
           <h1 className="text-2xl font-bold">Araç İstekleri</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Müşterilerin katalogda bulamadıkları araçlar için ilettiği talepler.
+            Müşterilerin katalogda bulamadıkları araçlar için ilettiği talepler. Aracı kataloğa ekledikten sonra tamamlandı olarak işaretleyin.
           </p>
         </div>
         <Button
@@ -79,7 +83,7 @@ export function VehicleRequestsAdmin() {
           <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-muted">
               <tr>
-                {["Tarih", "Marka", "Model", "Yıl", "Kasa", "Gönderen"].map(
+                {["İşlem / Durum", "Tarih", "Marka", "Model", "Yıl", "Kasa", "Gönderen"].map(
                   (label) => (
                     <th key={label} className="p-4 text-left">
                       {label}
@@ -91,6 +95,19 @@ export function VehicleRequestsAdmin() {
             <tbody>
               {records.map((record) => (
                 <tr key={record.id} className="border-t">
+                  <td className="p-4">
+                    {record.status === "completed" ? <span className="font-semibold text-emerald-600">Tamamlandı{record.completedAt && <small className="mt-1 block font-normal">{fullDate(record.completedAt)}</small>}</span> : <>
+                      <Button size="sm" disabled={completing !== null} onClick={async () => {
+                        setCompleting(record.id);setError("");
+                        try {
+                          await portalFetch("/api/vehicle-requests", { method: "POST", body: JSON.stringify({ id: record.id, status: "completed" }) });
+                          setRecords(previous => previous.map(row => row.id === record.id ? { ...row, status: "completed", completedAt: new Date().toISOString() } : row));
+                        } catch(error) { setError(error instanceof Error ? error.message : "İstek tamamlanamadı."); }
+                        finally { setCompleting(null); }
+                      }}>{completing === record.id ? "Kaydediliyor..." : "Tamamlandı olarak işaretle"}</Button>
+                      <p className="mt-2 text-xs text-muted-foreground">{record.notificationsEnabled ? "Müşteriye cihaz bildirimi gönderilecek." : "Cihaz bildirimi kaydı yok."}</p>
+                    </>}
+                  </td>
                   <td className="p-4 whitespace-nowrap">
                     {fullDate(record.createdAt)}
                   </td>

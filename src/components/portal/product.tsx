@@ -165,6 +165,7 @@ export function PortalProduct({ id }: { id: string }) {
                 <p className="mt-2 text-4xl font-black tracking-tight">
                   {money(product.priceTry)}
                 </p>
+                <p className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700">Montaj dahil</p>
                 <PortalButton
                   className="mt-5 w-full"
                   onClick={() => setBooking(true)}
