@@ -17,7 +17,7 @@ import {
   refreshProductPricesIfNeeded,
 } from "@/lib/product-price-refresh";
 
-export async function getProductsWithFreshPrices(
+export async function getStoredProducts(
   category?: ProductCategory
 ): Promise<
   WithId<ProductDocument>[]
@@ -40,12 +40,10 @@ export async function getProductsWithFreshPrices(
       })
       .toArray();
 
-  return refreshProductPricesIfNeeded(
-    documents
-  );
+  return documents;
 }
 
-export async function getProductByIdWithFreshPrice(
+export async function getStoredProductById(
   productId:
     string | ObjectId
 ): Promise<
@@ -79,12 +77,10 @@ export async function getProductByIdWithFreshPrice(
     return null;
   }
 
-  return refreshProductPriceIfNeeded(
-    product
-  );
+  return product;
 }
 
-export async function getProductsByIdsWithFreshPrices(
+export async function getStoredProductsByIds(
   productIds:
     Array<
       string | ObjectId
@@ -136,7 +132,18 @@ export async function getProductsByIdsWithFreshPrices(
       })
       .toArray();
 
-  return refreshProductPricesIfNeeded(
-    documents
-  );
+  return documents;
+}
+
+// External supplier requests belong to explicit price-refresh workflows.
+// Multimedia reads use the stored readers above, even if yesterday's check expired.
+export async function getProductsWithFreshPrices(category?: ProductCategory) {
+  return refreshProductPricesIfNeeded(await getStoredProducts(category));
+}
+export async function getProductByIdWithFreshPrice(productId: string | ObjectId) {
+  const product = await getStoredProductById(productId);
+  return product ? refreshProductPriceIfNeeded(product) : null;
+}
+export async function getProductsByIdsWithFreshPrices(productIds: Array<string | ObjectId>) {
+  return refreshProductPricesIfNeeded(await getStoredProductsByIds(productIds));
 }

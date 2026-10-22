@@ -9,6 +9,7 @@ import {
 
 import {
   getProductsByIdsWithFreshPrices,
+  getStoredProductsByIds,
 } from "@/lib/products-service";
 
 import type {
@@ -358,7 +359,8 @@ function getTemplateLaborItems(
 
 export async function buildSystemPreparationData(
   body:
-    SystemPreparationPayload
+    SystemPreparationPayload,
+  options?: { storedProductPrices?: boolean }
 ): Promise<BuiltSystemPreparationData> {
   const name =
     cleanString(
@@ -519,24 +521,11 @@ export async function buildSystemPreparationData(
     );
   }
 
-  /*
-   * Ürünler merkezi ürün servisinden alınır.
-   *
-   * Bu servis her ürün için:
-   * - sourceUrl yoksa mevcut MongoDB fiyatını kullanır.
-   * - sourceUrl varsa ürünün bugün kontrol edilip edilmediğini Europe/Istanbul gününe göre değerlendirir.
-   * - Bugün kontrol edilmediyse EGB fiyatını yeniler; 404 ise ürünü satışta değil işaretler.
-   * - EGB hatasında mevcut MongoDB fiyatıyla devam eder.
-   *
-   * Böylece hem POST hem PUT akışında system preparation snapshot'ı
-   * mümkün olan en güncel ürün fiyatı ile oluşturulur.
-   */
+  // Multimedia uses the daily price/availability snapshot; it must never scrape on read.
   const products =
     productObjectIds.length >
     0
-      ? await getProductsByIdsWithFreshPrices(
-          productObjectIds
-        )
+      ? await (options?.storedProductPrices ? getStoredProductsByIds : getProductsByIdsWithFreshPrices)(productObjectIds)
       : [];
 
   const productMap =

@@ -35,7 +35,7 @@ import {
 } from "@/lib/inventory-collection";
 
 import {
-  getProductByIdWithFreshPrice,
+  getStoredProductById,
 } from "@/lib/products-service";
 
 import {
@@ -101,7 +101,7 @@ export async function GET(
     }
 
     const product =
-      await getProductByIdWithFreshPrice(
+      await getStoredProductById(
         objectId
       );
 

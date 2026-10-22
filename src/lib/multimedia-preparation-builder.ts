@@ -162,7 +162,7 @@ export async function buildMultimediaPreparationData(
     await buildSystemPreparationData({
       ...body,
       name: autoName,
-    });
+    }, { storedProductPrices: true });
 
   let supplierPreference = body.multimediaMode === "framed" ? chooseSupplierPreference(base.items, existing) : undefined;
   if (supplierPreference) {
@@ -172,7 +172,7 @@ export async function buildMultimediaPreparationData(
     supplierPreference = resolved.preference;
     if (!sameSupplierSelection(base.items, resolved.items)) {
       base = await buildSystemPreparationData({ ...body, name: autoName, templateId: undefined, selections: [],
-        customItems: resolved.items.map((item) => ({ ...item, productId: item.productId?.toHexString() })) });
+        customItems: resolved.items.map((item) => ({ ...item, productId: item.productId?.toHexString() })) }, { storedProductPrices: true });
     }
   }
 

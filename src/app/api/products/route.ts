@@ -27,7 +27,7 @@ import {
 } from "@/lib/inventory-collection";
 
 import {
-  getProductsWithFreshPrices,
+  getStoredProducts,
 } from "@/lib/products-service";
 
 import {
@@ -87,7 +87,7 @@ export async function GET(
     }
 
     let products =
-      await getProductsWithFreshPrices(
+      await getStoredProducts(
         category &&
         isProductCategory(
           category

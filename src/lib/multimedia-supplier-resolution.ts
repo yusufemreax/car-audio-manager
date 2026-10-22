@@ -1,5 +1,5 @@
 import type { WithId } from "mongodb";
-import { getProductsByIdsWithFreshPrices } from "./products-service";
+import { getStoredProductsByIds } from "./products-service";
 import type { ProductDocument } from "./products-collection";
 import type { SystemPreparationItemDocument } from "./system-preparations-collection";
 import type { MultimediaSupplierPreference } from "./multimedia-preparations-collection";
@@ -85,7 +85,7 @@ export async function resolveMultimediaSuppliers(
       item.productId ? [item.productId.toHexString()] : [],
     ),
   ];
-  const products = await getProductsByIdsWithFreshPrices(ids);
+  const products = await getStoredProductsByIds(ids);
   const root = products.find(
     (product) => product._id.toHexString() === preference.multimediaProductId,
   );
@@ -101,7 +101,7 @@ export async function resolveMultimediaSuppliers(
     throw new Error(
       "Paketin asıl ekranı veya çerçevesi bulunamadı. Hazır multimedya seçimini kontrol edin.",
     );
-  const alternatives = await getProductsByIdsWithFreshPrices(
+  const alternatives = await getStoredProductsByIds(
     Object.values(root.multimediaAlternatives ?? {}),
   );
   const byId = new Map(

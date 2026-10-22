@@ -52,7 +52,7 @@ async function refreshOne(
         supplier: item.supplier,
         isCommissionIncluded: item.isCommissionIncluded !== false,
       })),
-    });
+    }, { storedProductPrices: true });
     const automaticDiscount = preparation.automaticDiscount !== false;
     const discountTry = automaticDiscount
       ? calculateMultimediaAutoDiscount(
