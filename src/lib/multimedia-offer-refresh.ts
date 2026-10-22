@@ -13,14 +13,15 @@ const inFlight = new Map<
   string,
   Promise<WithId<MultimediaPreparationDocument>>
 >();
-/** Only ready-package snapshots change. Existing customer offers keep their agreement. */
-async function refreshOne(
-  original: WithId<MultimediaPreparationDocument>,
-  rate: { rate: number; rateDate?: string },
-) {
-  const collection = await getMultimediaPreparationsCollection();
-  let preparation = original;
-  for (let attempt = 0; attempt < 3; attempt++) {
+/** The day is persisted in MongoDB so restarts and other server instances reuse it. */
+export function multimediaRefreshDay(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+function storedResult(preparation: WithId<MultimediaPreparationDocument>) {
+  if (preparation.dailyRefreshError) throw new Error(preparation.dailyRefreshError);
+  return preparation;
+}
+async function buildUpdate(preparation: WithId<MultimediaPreparationDocument>, rate: { rate: number; rateDate?: string }, day: string) {
     const snapshot = serializeSystemPreparation(preparation);
     const resolved =
       preparation.multimediaMode !== "vehicle_specific"
@@ -64,7 +65,7 @@ async function refreshOne(
     const { name: ignored, ...pricing } = base;
     void ignored;
     const screen = resolved.screen;
-    const update = {
+    return {
       ...pricing,
       items: base.items.map((item) => {
         const source = preparation.items.find(
@@ -95,49 +96,59 @@ async function refreshOne(
       discountTry,
       profitTry,
       customerTotalTry: base.productTotalTry + profitTry,
+      dailyRefreshDate: day,
       updatedAt: new Date(),
     };
+}
+/** Only ready-package snapshots change. Existing customer offers keep their agreement. */
+async function refreshOne(original: WithId<MultimediaPreparationDocument>, day: string, getRate: typeof getUsdTryExchangeRate) {
+  const collection = await getMultimediaPreparationsCollection();
+  // Another request may already have completed the daily work since the caller read its list.
+  const stored = await collection.findOne({ _id: original._id, status: "ready" });
+  if (!stored) throw new Error("Hazır multimedya değiştirildi veya kaldırıldı.");
+  let preparation: WithId<MultimediaPreparationDocument> = stored;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (preparation.dailyRefreshDate === day) return storedResult(preparation);
+    let update: Partial<MultimediaPreparationDocument>;
+    let failure: string | undefined;
+    try {
+      update = await buildUpdate(preparation, await getRate(), day);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : "Ürünler yenilenemedi; son kayıt gösteriliyor.";
+      // Unavailable packages also get a daily stamp: reads must not repeat failed work.
+      update = { dailyRefreshDate: day, dailyRefreshError: failure, updatedAt: new Date() };
+    }
     const result = await collection.updateOne(
-      {
-        _id: preparation._id,
-        status: "ready",
-        updatedAt: preparation.updatedAt,
-      },
-      { $set: update },
+      { _id: preparation._id, status: "ready", updatedAt: preparation.updatedAt },
+      { $set: update, ...(!failure ? { $unset: { dailyRefreshError: "" as const } } : {}) },
     );
-    if (result.matchedCount) return { ...preparation, ...update };
-    const latest = await collection.findOne({
-      _id: preparation._id,
-      status: "ready",
-    });
-    if (!latest)
-      throw new Error("Hazır multimedya değiştirildi veya kaldırıldı.");
+    if (result.matchedCount) {
+      if (failure) throw new Error(failure);
+      const fresh = { ...preparation, ...update };
+      delete fresh.dailyRefreshError;
+      return fresh;
+    }
+    const latest = await collection.findOne({ _id: preparation._id, status: "ready" });
+    if (!latest) throw new Error("Hazır multimedya değiştirildi veya kaldırıldı.");
     preparation = latest;
   }
-  throw new Error(
-    "Hazır multimedya eşzamanlı güncelleniyor. Lütfen yeniden deneyin.",
-  );
+  throw new Error("Hazır multimedya eşzamanlı güncelleniyor. Lütfen yeniden deneyin.");
 }
-export async function refreshMultimediaForOffers(
-  preparations: WithId<MultimediaPreparationDocument>[],
-) {
-  if (!preparations.length) return [];
-  const rate = await getUsdTryExchangeRate();
+export async function refreshMultimediaForOffers(preparations: WithId<MultimediaPreparationDocument>[]) {
+  const day = multimediaRefreshDay();
+  let rate: ReturnType<typeof getUsdTryExchangeRate> | undefined;
+  const getRate = () => rate ??= getUsdTryExchangeRate();
   const results: WithId<MultimediaPreparationDocument>[] = [];
   for (const preparation of preparations) {
+    // The hot path performs no product read, exchange-rate read, calculation or write.
+    if (preparation.dailyRefreshDate === day) { results.push(storedResult(preparation)); continue; }
     const id = preparation._id.toHexString();
     const existing = inFlight.get(id);
-    if (existing) {
-      results.push(await existing);
-      continue;
-    }
-    const pending = refreshOne(preparation, rate);
+    if (existing) { results.push(await existing); continue; }
+    const pending = refreshOne(preparation, day, getRate);
     inFlight.set(id, pending);
-    try {
-      results.push(await pending);
-    } finally {
-      if (inFlight.get(id) === pending) inFlight.delete(id);
-    }
+    try { results.push(await pending); }
+    finally { if (inFlight.get(id) === pending) inFlight.delete(id); }
   }
   return results;
 }

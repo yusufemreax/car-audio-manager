@@ -25,6 +25,8 @@ export interface MultimediaSupplierPreference {
 
 export interface MultimediaPreparationDocument
   extends SystemPreparationDocument {
+  dailyRefreshDate?: string;
+  dailyRefreshError?: string;
   supplierPreference?: MultimediaSupplierPreference;
   automaticDiscount?: boolean;
   multimediaMode?: MultimediaPreparationMode;

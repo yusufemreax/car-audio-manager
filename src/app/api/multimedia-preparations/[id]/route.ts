@@ -220,7 +220,7 @@ export async function PUT(
     const unset: Record<
       string,
       ""
-    > = {};
+    > = { dailyRefreshDate: "", dailyRefreshError: "" };
 
     if (
       !preparationData.templateId
