@@ -340,6 +340,11 @@ export function PortalCatalog() {
                           : "Multimedya"}
                       </span>
                     </div>
+                    {product.hasFrontRecordingCamera === true && (
+                      <p className="border-y border-red-100 bg-red-50 px-5 py-2.5 text-center text-sm font-bold text-red-700">
+                        Kayıt kamerası hediye
+                      </p>
+                    )}
                     <div className="p-5">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                         {product.vehicle}

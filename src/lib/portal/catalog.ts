@@ -114,6 +114,7 @@ async function publicView(
     ram,
     storage,
     priceTry: Math.round(preparation.customerTotalTry * 100) / 100,
+    hasFrontRecordingCamera: specifications.hasFrontRecordingCamera === true,
     images,
     features,
   };

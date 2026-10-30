@@ -11,6 +11,7 @@ export interface PortalUser {
   phone: string;
 }
 export interface PortalMultimedia {
+  hasFrontRecordingCamera?: boolean;
   id: string;
   title: string;
   vehicle: string;
