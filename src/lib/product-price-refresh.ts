@@ -67,6 +67,7 @@ export function isProductPriceFresh(
 export const isProductPriceRefreshAttemptedToday = isProductPriceFresh;
 async function refresh(
   product: WithId<ProductDocument>,
+  force = false,
 ): Promise<WithId<ProductDocument>> {
   const collection = await getProductsCollection();
   // A caller can hold yesterday's document after a concurrent request refreshed it.
@@ -78,7 +79,7 @@ async function refresh(
   let success = false,
     availabilityChecked = false;
   for (const row of rows) {
-    if (rowFresh(row, now)) continue;
+    if (!force && rowFresh(row, now)) continue;
     row.priceRefreshAttemptedAt = now;
     const source = getProductPriceSource(row.sourceUrl!);
     if (!source || (row.supplier !== "Diğer" && source !== row.supplier))
@@ -127,14 +128,14 @@ async function refresh(
 }
 export async function refreshProductPriceIfNeeded(
   product: WithId<ProductDocument>,
-  _options?: { force?: boolean },
+  options?: { force?: boolean },
 ) {
-  void _options; // The once-per-Istanbul-day limit also applies to manual refresh.
-  if (isProductPriceFresh(product)) return product;
+  const force = options?.force === true;
+  if (!force && isProductPriceFresh(product)) return product;
   const id = product._id.toHexString(),
     existing = inFlight.get(id);
   if (existing) return existing;
-  const promise = refresh(product);
+  const promise = refresh(product, force);
   inFlight.set(id, promise);
   try {
     return await promise;

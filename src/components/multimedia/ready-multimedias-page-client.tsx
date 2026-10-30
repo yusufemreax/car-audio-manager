@@ -10,6 +10,7 @@ import {
   MonitorSmartphone,
   Pencil,
   Search,
+  Trash2,
   TrendingUp,
 } from "lucide-react";
 
@@ -110,6 +111,7 @@ export function ReadyMultimediasPageClient() {
     useState<MultimediaPreparation | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [copyingSystemId, setCopyingSystemId] = useState<string | null>(null);
+  const [deletingSystemId, setDeletingSystemId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const loadSystems = useCallback(async () => {
@@ -295,6 +297,34 @@ export function ReadyMultimediasPageClient() {
       );
     } finally {
       setCopyingSystemId(null);
+    }
+  };
+
+  const deleteSystem = async (system: MultimediaPreparation) => {
+    if (deletingSystemId) return;
+    const label = `${vehicleTitle(system)} · ${vehicleGeneration(system)}`;
+    if (!window.confirm(`“${label}” hazır multimedya kaydı silinsin mi?`)) return;
+
+    setDeletingSystemId(system.id);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const response = await fetch(
+        `/api/multimedia-preparations/${encodeURIComponent(system.id)}`,
+        { method: "DELETE" },
+      );
+      const result: ApiResponse<null> = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message ?? "Hazır multimedya silinemedi.");
+      }
+      setDetailOpen(false);
+      setSelectedSystem(null);
+      setSuccessMessage(`${vehicleTitle(system)} hazır multimedya kaydı silindi.`);
+      await loadSystems();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Hazır multimedya silinemedi.");
+    } finally {
+      setDeletingSystemId(null);
     }
   };
 
@@ -534,6 +564,22 @@ export function ReadyMultimediasPageClient() {
                             type="button"
                             variant="ghost"
                             size="sm"
+                            disabled={deletingSystemId !== null}
+                            onClick={() => void deleteSystem(system)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            {deletingSystemId === system.id ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="size-4" />
+                            )}
+                            <span className="sr-only">Sil</span>
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
                             onClick={() => openDetail(system)}
                           >
                             <Eye className="size-4" />
@@ -674,6 +720,21 @@ export function ReadyMultimediasPageClient() {
                         <Copy className="size-4" />
                       )}
                       Kopyala
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={deletingSystemId !== null}
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => void deleteSystem(selectedSystem)}
+                    >
+                      {deletingSystemId === selectedSystem.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-4" />
+                      )}
+                      Sil
                     </Button>
                     <Button
                       type="button"
