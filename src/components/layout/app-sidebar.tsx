@@ -188,7 +188,7 @@ export function AppSidebar() {
   useEffect(() => {
     if (
       pathname.startsWith(
-        "/products"
+        "/admin/products"
       )
     ) {
       setAccordionValue(
@@ -208,7 +208,7 @@ export function AppSidebar() {
 
     if (
       pathname.startsWith(
-        "/stock"
+        "/admin/stock"
       )
     ) {
       setAccordionValue(
@@ -228,7 +228,7 @@ export function AppSidebar() {
   useEffect(() => {
     if (
       !pathname.startsWith(
-        "/system-parameters"
+        "/admin/system-parameters"
       )
     ) {
       return;
@@ -249,14 +249,14 @@ export function AppSidebar() {
 
   const isSystemParametersRoute =
     pathname.startsWith(
-      "/system-parameters"
+      "/admin/system-parameters"
     );
 
   /* CAR_AUDIO_MULTIMEDIA_MENU_V1 */
   useEffect(() => {
     if (
-      pathname.startsWith("/multimedia-preparation") ||
-      pathname.startsWith("/ready-multimedias")
+      pathname.startsWith("/admin/multimedia-preparation") ||
+      pathname.startsWith("/admin/ready-multimedias")
     ) {
       setAccordionValue((current) =>
         current.includes("multimedias")
@@ -268,12 +268,12 @@ export function AppSidebar() {
 
   const isProductsRoute =
     pathname.startsWith(
-      "/products"
+      "/admin/products"
     );
 
   const isStockRoute =
     pathname.startsWith(
-      "/stock"
+      "/admin/stock"
     );
 
   return (
@@ -510,7 +510,7 @@ export function AppSidebar() {
                 <AccordionContent className="pb-1">
                   <div className="ml-5 mt-1 border-l pl-3">
                     <Link
-                      href="/system-parameters/vehicles"
+                      href="/admin/system-parameters/vehicles"
                       className={`
                         mb-1
                         block
@@ -521,7 +521,7 @@ export function AppSidebar() {
                         transition-colors
                         ${
                           pathname ===
-                          "/system-parameters/vehicles"
+                          "/admin/system-parameters/vehicles"
                             ? "bg-primary/10 font-medium text-primary"
                             : "text-muted-foreground hover:bg-accent hover:text-foreground"
                         }
@@ -542,8 +542,8 @@ export function AppSidebar() {
                     rounded-lg px-3 py-2
                     hover:bg-accent hover:no-underline
                     ${
-                      pathname.startsWith("/multimedia-preparation") ||
-                      pathname.startsWith("/ready-multimedias")
+                      pathname.startsWith("/admin/multimedia-preparation") ||
+                      pathname.startsWith("/admin/ready-multimedias")
                         ? "bg-accent text-foreground"
                         : ""
                     }
@@ -560,10 +560,10 @@ export function AppSidebar() {
                 <AccordionContent className="pb-1">
                   <div className="ml-5 mt-1 border-l pl-3">
                     <Link
-                      href="/multimedia-preparation"
+                      href="/admin/multimedia-preparation"
                       className={`
                         mb-1 block rounded-md px-3 py-2 text-sm transition-colors
-                        ${pathname.startsWith("/multimedia-preparation")
+                        ${pathname.startsWith("/admin/multimedia-preparation")
                           ? "bg-primary/10 font-medium text-primary"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground"}
                       `}
@@ -572,10 +572,10 @@ export function AppSidebar() {
                     </Link>
 
                     <Link
-                      href="/ready-multimedias"
+                      href="/admin/ready-multimedias"
                       className={`
                         mb-1 block rounded-md px-3 py-2 text-sm transition-colors
-                        ${pathname.startsWith("/ready-multimedias")
+                        ${pathname.startsWith("/admin/ready-multimedias")
                           ? "bg-primary/10 font-medium text-primary"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground"}
                       `}
@@ -590,13 +590,13 @@ export function AppSidebar() {
 
 
             <Link
-              href="/bulk-stock-order"
+              href="/admin/bulk-stock-order"
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                 transition-colors
                 ${
                   pathname ===
-                  "/bulk-stock-order"
+                  "/admin/bulk-stock-order"
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }
@@ -610,13 +610,13 @@ export function AppSidebar() {
             </Link>
 
             <Link
-              href="/suppliers"
+              href="/admin/suppliers"
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                 transition-colors
                 ${
                   pathname.startsWith(
-                    "/suppliers"
+                    "/admin/suppliers"
                   )
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -631,12 +631,12 @@ export function AppSidebar() {
             </Link>
 
             <Link
-              href="/templates"
+              href="/admin/templates"
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                 transition-colors
                 ${
-                  pathname === "/templates"
+                  pathname === "/admin/templates"
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }
@@ -650,13 +650,13 @@ export function AppSidebar() {
             </Link>
 
             <Link
-              href="/system-preparation"
+              href="/admin/system-preparation"
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                 transition-colors
                 ${
                   pathname ===
-                  "/system-preparation"
+                  "/admin/system-preparation"
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }
@@ -670,13 +670,13 @@ export function AppSidebar() {
             </Link>
 
             <Link
-              href="/ready-systems"
+              href="/admin/ready-systems"
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                 transition-colors
                 ${
                   pathname ===
-                  "/ready-systems"
+                  "/admin/ready-systems"
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }
@@ -692,13 +692,13 @@ export function AppSidebar() {
 
 
             <Link
-              href="/total-revenue"
+              href="/admin/total-revenue"
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                 transition-colors
                 ${
                   pathname ===
-                  "/total-revenue"
+                  "/admin/total-revenue"
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }
@@ -711,23 +711,23 @@ export function AppSidebar() {
               </span>
             </Link>
 
-            <Link href="/customer-appointments" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === "/customer-appointments" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+            <Link href="/admin/customer-appointments" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === "/admin/customer-appointments" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
               <CalendarDays className="size-4" />
               Müşteri Randevuları
             </Link>
-            <Link href="/vehicle-requests" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === "/vehicle-requests" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+            <Link href="/admin/vehicle-requests" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === "/admin/vehicle-requests" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
               <CarFront className="size-4" />
               Araç İstekleri
             </Link>
 
             <Link
-              href="/customers"
+              href="/admin/customers"
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                 transition-colors
                 ${
                   pathname ===
-                  "/customers"
+                  "/admin/customers"
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }

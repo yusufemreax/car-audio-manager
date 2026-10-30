@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function StockPage() {
-  redirect("/stock/speaker");
+  redirect("/admin/stock/speaker");
 }

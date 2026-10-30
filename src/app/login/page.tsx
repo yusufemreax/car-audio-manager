@@ -10,14 +10,14 @@ interface LoginPageProps {
 
 function getSafeNextPath(value: string | string[] | undefined) {
   const candidate =
-    typeof value === "string" ? value : "/";
+    typeof value === "string" ? value : "/admin";
 
   if (
     !candidate.startsWith("/") ||
     candidate.startsWith("//") ||
     candidate.startsWith("/login")
   ) {
-    return "/";
+    return "/admin";
   }
 
   return candidate;

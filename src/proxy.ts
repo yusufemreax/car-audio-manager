@@ -15,6 +15,23 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/session",
 ]);
 
+const ADMIN_LEGACY_PATHS = [
+  "/customer-appointments",
+  "/customers",
+  "/multimedia-preparation",
+  "/products",
+  "/ready-multimedias",
+  "/ready-systems",
+  "/stock",
+  "/suppliers",
+  "/system-parameters",
+  "/system-preparation",
+  "/templates",
+  "/vehicle-requests",
+  "/bulk-stock-order",
+  "/total-revenue",
+];
+
 function unauthorizedApiResponse() {
   return NextResponse.json(
     {
@@ -37,12 +54,25 @@ export async function proxy(
 ) {
   const {
     pathname,
-    search,
   } = request.nextUrl;
+
+  // The domain root is the customer catalog. Keep the visible URL at /.
+  if (pathname === "/") {
+    const customerUrl = request.nextUrl.clone();
+    customerUrl.pathname = "/musteri";
+    return NextResponse.rewrite(customerUrl);
+  }
 
   // Customer routes expose only the dedicated retail APIs. Admin routes keep their existing session check.
   if (pathname === "/musteri" || pathname.startsWith("/musteri/") || pathname.startsWith("/api/portal/")) {
     return NextResponse.next();
+  }
+
+  // Keep old bookmarks working while moving every dashboard page under /admin.
+  if (ADMIN_LEGACY_PATHS.some((base) => pathname === base || pathname.startsWith(`${base}/`))) {
+    const adminUrl = request.nextUrl.clone();
+    adminUrl.pathname = `/admin${pathname}`;
+    return NextResponse.redirect(adminUrl);
   }
 
   const token = request.cookies.get(
@@ -56,7 +86,7 @@ export async function proxy(
   if (pathname === "/login") {
     if (session) {
       return NextResponse.redirect(
-        new URL("/", request.url)
+        new URL("/admin", request.url)
       );
     }
 
@@ -82,7 +112,7 @@ export async function proxy(
 
   loginUrl.searchParams.set(
     "next",
-    `${pathname}${search}`
+    `${pathname}${request.nextUrl.search}`
   );
 
   return NextResponse.redirect(
