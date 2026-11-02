@@ -56,6 +56,36 @@ export async function proxy(
     pathname,
   } = request.nextUrl;
 
+  const isAdminDomain =
+    request.nextUrl.hostname.toLowerCase() ===
+    "admin.axoytuning.com";
+
+  // Keep the admin subdomain root on `/` while serving the protected admin home.
+  if (pathname === "/" && isAdminDomain) {
+    const token = request.cookies.get(
+      AUTH_COOKIE_NAME
+    )?.value;
+
+    const session = await verifySessionToken(
+      token
+    );
+
+    if (!session) {
+      const loginUrl = new URL(
+        "/login",
+        request.url
+      );
+
+      loginUrl.searchParams.set("next", "/");
+
+      return NextResponse.redirect(loginUrl);
+    }
+
+    const adminUrl = request.nextUrl.clone();
+    adminUrl.pathname = "/admin";
+    return NextResponse.rewrite(adminUrl);
+  }
+
   // The domain root is the customer catalog. Keep the visible URL at /.
   if (pathname === "/") {
     const customerUrl = request.nextUrl.clone();
